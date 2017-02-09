@@ -111,8 +111,10 @@ with graph.as_default():
   # Add the regularization term to the loss.
   loss += beta * (tf.nn.l2_loss(layer3_weights) + tf.nn.l2_loss(layer4_weights))
 
-  # Optimizer.
-  optimizer = tf.train.GradientDescentOptimizer(0.1).minimize(loss)
+  # Optimizer w/ learning rate decay.
+  global_step = tf.Variable(0)
+  learning_rate = tf.train.exponential_decay(0.01, global_step, 1000, 0.9)
+  optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
 
   # Predictions for the training, validation, and test data.
   train_prediction = tf.nn.softmax(logits)
@@ -124,6 +126,9 @@ with graph.as_default():
 
 
 num_steps = 3001
+steps = np.array([])
+loss_batch = np.array([])
+acc_valid = np.array([])
 
 with tf.Session(graph=graph) as session:
   tf.global_variables_initializer().run()
@@ -139,4 +144,18 @@ with tf.Session(graph=graph) as session:
       print('Minibatch loss at step %d: %f' % (step, l))
       print('Minibatch accuracy: %.1f%%' % accuracy(predictions, batch_labels))
       print('Validation accuracy: %.1f%%' % accuracy(valid_prediction.eval(feed_dict=feed_dict), valid_labels))
+      steps = np.append(steps, step)
+      loss_batch = np.append(loss_batch, l)
+      acc_valid = np.append(acc_valid, [accuracy(valid_prediction.eval(feed_dict=feed_dict), valid_labels)])
   print('Test accuracy: %.1f%%' % accuracy(test_prediction.eval(feed_dict=feed_dict), test_labels))
+
+
+
+
+
+
+print('Loss evolution')
+s1, = plt.plot(steps, loss_batch)
+s2, = plt.plot(steps, acc_valid/100)
+plt.legend([s1, s2], ['loss_batch','accuracy_valid'])
+plt.show()
