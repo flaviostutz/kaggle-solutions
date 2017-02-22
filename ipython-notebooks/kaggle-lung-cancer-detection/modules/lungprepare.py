@@ -12,6 +12,7 @@ from scipy.ndimage.interpolation import shift
 import itertools
 from itertools import product, combinations
 from skimage import measure, morphology, transform
+import math
 
 def find_next_valid(line, bgs=[]):
     for e in line:
