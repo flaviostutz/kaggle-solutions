@@ -91,7 +91,7 @@ def validate_dataset(dataset_dir, name, image_dims, save_dir=None):
             logger.info('x=')
             if(save_dir!=None): 
                 mkdirs(save_dir)
-                show_slices(x_ds[pi], name + '(' + pi + ')', save_dir)
+                show_slices(x_ds[pi], name + '(' + str(pi) + ')', output_dir=save_dir)
                 logger.info('y=' + str(y_ds[pi]))
     return ok
                 
