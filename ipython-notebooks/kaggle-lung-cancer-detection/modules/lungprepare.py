@@ -115,12 +115,12 @@ def segment_lung_mask(image, fill_lung_structures=True):
 
     #identify the body label
     s = np.array(np.shape(labels))
-    body = find_next_valid(labels[round(s[0]*0.6), round(s[1]*0.5)], bgs=bgs)
+    body = find_next_valid(labels[int(s[0]*0.6), int(s[1]*0.5)], bgs=bgs)
     bgs.append(body)
     logger.debug('bgs' + str(bgs))
 
     #look inside the volume where lung structures is meant to be
-    lung_label = largest_label_volume(labels[s[0]*0.2:s[0]*0.8, s[1]*0.25:s[1]*0.75, s[2]*0.25:s[2]*0.75], bgs=bgs)
+    lung_label = largest_label_volume(labels[int(s[0]*0.2):int(s[0]*0.8), int(s[1]*0.25):int(s[1]*0.75), int(s[2]*0.25):int(s[2]*0.75)], bgs=bgs)
     logger.debug('lung_label' + str(lung_label))
 
     #remove everything that is not part of the lung
