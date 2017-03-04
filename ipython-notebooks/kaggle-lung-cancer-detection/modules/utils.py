@@ -35,7 +35,7 @@ def show_image(pixels, slice_pos, name, output_dir=None):
         im = im[:,:,0]
     ax1.imshow(im, cmap=plt.cm.gray)
     
-    if(save):
+    if(output_dir!=None):
         file = output_dir + name + '-' + 'slice-' + str(slice_pos) + '.jpg'
         plt.savefig(file)
         plt.close(fig1)

@@ -1,6 +1,7 @@
 import numpy as np
 from modules.utils import Timer
 from modules.logging import logger
+import modules.utils as utils
 import os
 import dicom
 import scipy.ndimage
@@ -240,19 +241,24 @@ def bbox_dim(bbox):
     return bw,bh,bd
 
 
-def process_patient_images(patient_dir, image_dims):
+def process_patient_images(patient_dir, image_dims, output_dir, patient_id):
     patient_scan = load_scan(patient_dir)
     patient_pixels = get_pixels_hu(patient_scan)
+    utils.show_slices(patient_pixels, str(patient_id) + 'hu', nr_slices=12, cols=4, output_dir=output_dir + 'images')
     patient_pixels, spacing = resample(patient_pixels, patient_scan, [1,1,1])
+    utils.show_slices(patient_pixels, str(patient_id) + 'resampled', nr_slices=12, cols=4, output_dir=output_dir + 'images')
     patient_lung_mask = segment_lung_mask(patient_pixels, True)
+    utils.show_slices(patient_pixels, str(patient_id) + 'mask', nr_slices=12, cols=4, output_dir=output_dir + 'images')
     
     t = Timer('apply lung mask to image volume')
     patient_pixels = np.ma.masked_where(patient_lung_mask==0, patient_pixels).filled(fill_value=0)
+    utils.show_slices(patient_pixels, str(patient_id) + 'masked', nr_slices=12, cols=4, output_dir=output_dir + 'images')
     t.stop()
 
-    t = Timer('rotate image for optimal pose')
+    t = Timer('rotate image for optimal pose ' + patient_dir)
     rotation_angle = discover_lung_rotation(patient_lung_mask)
     patient_pixels = rotate(patient_pixels,rotation_angle,(1,2), reshape=False)
+    utils.show_slices(patient_pixels, str(patient_id) + 'rotated', nr_slices=12, cols=4, output_dir=output_dir + 'images')
     t.stop()
     
     t = Timer('resize image volume to {}x{}x{}'.format(image_dims[0], image_dims[1], image_dims[2]))
