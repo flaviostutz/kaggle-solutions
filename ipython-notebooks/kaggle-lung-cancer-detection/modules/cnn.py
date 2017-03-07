@@ -22,9 +22,11 @@ def net_simplest1(image_dims):
     
     net = layers.conv.conv_3d(net, 32, 3, strides=1, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+    net = layers.core.dropout(net, 0.8)
 
     net = layers.conv.conv_3d(net, 64, 3, strides=1, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+    net = layers.core.dropout(net, 0.8)
     
     net = layers.core.fully_connected(net, 64, activation='relu')
     net = layers.core.dropout(net, 0.8)
@@ -35,6 +37,29 @@ def net_simplest1(image_dims):
                                       loss='categorical_crossentropy',
                                       learning_rate=0.001)
     return net
+
+
+def net_deepmedic_simple(image_dims):
+    net = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2], image_dims[3]], dtype=tf.float32)
+    
+    net = layers.conv.conv_3d(net, 32, 3, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+    net = layers.core.dropout(net, 0.8)
+
+    net = layers.conv.conv_3d(net, 64, 3, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+    net = layers.core.dropout(net, 0.8)
+    
+    net = layers.core.fully_connected(net, 64, activation='relu')
+    net = layers.core.dropout(net, 0.8)
+    
+    net = layers.core.fully_connected(net, 2, activation='softmax')
+    
+    net = layers.estimator.regression(net, optimizer='adam',
+                                      loss='categorical_crossentropy',
+                                      learning_rate=0.001)
+    return net
+
 
 def evaluate_dataset(dataset_path, model):
     with h5py.File(dataset_path, 'r') as hdf5:
@@ -47,7 +72,7 @@ def evaluate_dataset(dataset_path, model):
             
         logger.info('Evaluate performance on dataset '+ dataset_path +'...')
         acc = model.evaluate(X, Y, batch_size=12)
-        logger.info('Score: ' + str(acc))
+        logger.info('Accuracy: ' + str(acc))
 
 def prepare_model_dirs(output_dir):
     dir_tflogs = output_dir + 'tf-logs'
