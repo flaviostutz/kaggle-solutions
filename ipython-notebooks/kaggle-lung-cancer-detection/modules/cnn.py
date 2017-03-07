@@ -42,17 +42,19 @@ def net_simplest1(image_dims):
 def net_deepmedic_simple(image_dims):
     net = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2], image_dims[3]], dtype=tf.float32)
     
-    net = layers.conv.conv_3d(net, 32, 3, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 30, 5, strides=1, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
-    net = layers.core.dropout(net, 0.8)
 
-    net = layers.conv.conv_3d(net, 64, 3, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 40, 5, strides=1, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
-    net = layers.core.dropout(net, 0.8)
+
+    net = layers.conv.conv_3d(net, 40, 5, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
     
-    net = layers.core.fully_connected(net, 64, activation='relu')
-    net = layers.core.dropout(net, 0.8)
-    
+    net = layers.conv.conv_3d(net, 50, 5, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+ 
+    #classification layer
     net = layers.core.fully_connected(net, 2, activation='softmax')
     
     net = layers.estimator.regression(net, optimizer='adam',
