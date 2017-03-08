@@ -65,6 +65,33 @@ def net_deepmedic_simple(image_dims):
     return net
 
 
+def net_alzheimer_cnn(image_dims):
+    net = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2], image_dims[3]], dtype=tf.float32)
+    
+    #3d convolutions layers
+    net = layers.conv.conv_3d(net, 8, 3, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+
+    net = layers.conv.conv_3d(net, 8, 3, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+
+    net = layers.conv.conv_3d(net, 8, 3, strides=1, activation='relu')
+    net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
+    
+    #fully connected with 1x1 conv
+    net = layers.core.dropout(net, 0.7)
+    net = layers.core.fully_connected(net, 2000, activation='tanh')
+    net = layers.core.fully_connected(net, 500, activation='tanh')
+    
+    #classification layer
+    net = layers.core.fully_connected(net, 2, activation='softmax')
+    
+    net = layers.estimator.regression(net, optimizer='adam',
+                                      loss='categorical_crossentropy',
+                                      learning_rate=0.001)
+    return net
+
+
 def evaluate_dataset(dataset_path, model):
     with h5py.File(dataset_path, 'r') as hdf5:
         X = hdf5['X']
