@@ -3,10 +3,6 @@ import h5py
 import tensorflow as tf
 import tflearn
 from tflearn import layers
-#from tflearn.layers.core import *
-#from tflearn.layers.conv import *
-#from tflearn.layers.normalization import *
-#from tflearn.layers.estimator import regression
 
 from modules.logging import logger
 import modules.logging
@@ -43,22 +39,22 @@ def net_deepmedic_simple(image_dims):
     net = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2], image_dims[3]], dtype=tf.float32)
     
     #3d convolutions layers
-    net = layers.conv.conv_3d(net, 30, 5, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 30, 3, strides=1, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
 
-    net = layers.conv.conv_3d(net, 40, 5, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 40, 3, strides=2, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
 
-    net = layers.conv.conv_3d(net, 40, 5, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 40, 3, strides=2, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
     
-    net = layers.conv.conv_3d(net, 50, 5, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 50, 3, strides=2, activation='relu')
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
     net = layers.core.dropout(net, 0.8)
 
     #fully connected with 1x1 conv
-#    net = layers.conv.conv_3d(net, 150, 1, strides=1, activation='relu')
-#    net = layers.conv.conv_3d(net, 150, 1, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 150, 1, strides=1, activation='relu')
+    net = layers.conv.conv_3d(net, 150, 1, strides=1, activation='relu')
     
     #classification layer
     net = layers.core.fully_connected(net, 2, activation='softmax')
