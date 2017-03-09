@@ -79,9 +79,11 @@ def net_alzheimer_cnn(image_dims):
     net = layers.conv.max_pool_3d(net, [1,2,2,2,1], strides=[1,2,2,2,1])
     
     #fully connected with 1x1 conv
-    net = layers.core.dropout(net, 0.7)
-    net = layers.core.fully_connected(net, 2000, activation='tanh')
-    net = layers.core.fully_connected(net, 500, activation='tanh')
+    net = tflearn.flatten(net)
+    net = layers.core.fully_connected(net, 2000, activation='relu')
+    net = layers.core.dropout(net, 0.8)
+    net = layers.core.fully_connected(net, 500, activation='relu')
+    net = layers.core.dropout(net, 0.8)
     
     #classification layer
     net = layers.core.fully_connected(net, 2, activation='softmax')
