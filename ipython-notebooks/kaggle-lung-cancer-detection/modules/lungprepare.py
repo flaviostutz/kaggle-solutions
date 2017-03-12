@@ -287,21 +287,6 @@ def process_patient_images(patient_dir, image_dims, output_dir, patient_id):
     patient_pixels = shift(patient_pixels, (diff[2],diff[1],diff[0]))
     t.stop()
 
-    #normalization for better training on neural networks
-    t = Timer('pixel normalization')
-    MIN_BOUND = -1000.0
-    MAX_BOUND = 400.0
-    
-    patient_pixels = (patient_pixels - MIN_BOUND) / (MAX_BOUND - MIN_BOUND)
-    patient_pixels[patient_pixels>1] = 1.
-    patient_pixels[patient_pixels<0] = 0.
-
-    #0-center pixels
-    logger.debug('mean pixels=' + str(np.mean(patient_pixels)))
-    PIXEL_MEAN = 0.6 #calculated before
-    patient_pixels = patient_pixels - PIXEL_MEAN
-    t.stop()
-    
     #add color channel dimension
     patient_pixels = np.expand_dims(patient_pixels, axis=3)
     
