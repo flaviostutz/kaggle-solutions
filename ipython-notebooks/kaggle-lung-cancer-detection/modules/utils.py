@@ -7,11 +7,12 @@ import shutil
 import os
 import collections
 
-def show_slices(pixels, name, nr_slices=12, cols=4, output_dir=None):
+def show_slices(pixels, name, nr_slices=12, cols=4, output_dir=None, size=7):
+    print(name)
     fig = plt.figure()
     slice_depth = round(np.shape(pixels)[0]/nr_slices)
     rows = round(nr_slices/cols)+1
-    fig.set_size_inches(cols*10, rows*10)
+    fig.set_size_inches(cols*size, rows*size)
     for i in range(nr_slices):
         slice_pos = int(slice_depth*i)
         y = fig.add_subplot(rows,cols,i+1)
@@ -27,9 +28,10 @@ def show_slices(pixels, name, nr_slices=12, cols=4, output_dir=None):
     else:
         plt.show()
 
-def show_image(pixels, slice_pos, name, output_dir=None):
+def show_image(pixels, slice_pos, name, output_dir=None, size=4):
+    print(name)
     fig1, ax1 = plt.subplots(1)
-    fig1.set_size_inches(4,4)
+    fig1.set_size_inches(size,size)
     im = pixels[round(np.shape(pixels)[0]*(slice_pos-1))]
     if(len(np.shape(im))>2):
         im = im[:,:,0]
