@@ -97,7 +97,29 @@ def validate_dataset(dataset_dir, name, image_dims, save_dir=None):
                 
 def dataset_path(dataset_dir, name, image_dims):
     return dataset_dir + '{}-{}-{}-{}.h5'.format(name, image_dims[0], image_dims[1], image_dims[2])
-                
+
+def create_xy_datasets(output_dir, name, image_dims, size):
+    dataset_file = dataset_path(output_dir, name, image_dims)
+    h5f = h5py.File(dataset_file, 'w')
+    x_ds = h5f.create_dataset('X', (size, image_dims[0], image_dims[1], image_dims[2], 1), chunks=(1, image_dims[0], image_dims[1], image_dims[2], 1), dtype='f')
+    y_ds = h5f.create_dataset('Y', (size, 2), dtype='f')
+
+    logger.debug('input x shape={}'.format(h5f['X'].shape))
+    x_ds = h5f['X']
+    y_ds = h5f['Y']
+    
+    return h5f, x_ds, y_ds
+
+def normalize_pixels(image_pixels, min_bound, max_bound, pixels_mean):
+    image_pixels = (image_pixels - min_bound) / (max_bound - min_bound)
+    image_pixels[image_pixels>1] = 1.
+    image_pixels[image_pixels<0] = 0.
+
+    #0-center pixels
+    logger.debug('mean pixels=' + str(np.mean(image_pixels)))
+    image_pixels = image_pixels - pixel_mean
+    return image_pixels
+
 def mkdirs(base_dir, dirs=[], recreate=False):
     if(recreate):
         shutil.rmtree(base_dir, True)
