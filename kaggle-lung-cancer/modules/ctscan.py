@@ -3,16 +3,16 @@ import SimpleITK as sitk
 import numpy as np
 
 class CTScanMhd(object):
-    def __init__(self, base_dir, filename, coords = None):
+    def __init__(self, base_dir, filename):
         self.filename = filename
-        self.coords = coords
+        self.coords = None
         self.base_dir = base_dir
         path = glob.glob(self.base_dir + '/*/' + self.filename + '.mhd')
         self.ds = sitk.ReadImage(path[0])
         self.image = sitk.GetArrayFromImage(self.ds)
 
-    def reset_coords(self, coords):
-        self.coords = coords
+    def set_coords(self, coords):
+        self.coords = (coords[2], coords[1], coords[0])
 
     def get_resolution(self):
         return self.ds.GetSpacing()
@@ -33,7 +33,8 @@ class CTScanMhd(object):
     def get_image(self):
         return self.image
     
-    def get_subimage(self, dims):
+    def get_subimage(self, center, dims):
+        self.set_coords(center)
         x, y, z = self.get_voxel_coords()
         subImage = self.image[int(z-dims[0]/2):int(z+dims[0]/2), int(y-dims[1]/2):int(y+dims[1]/2), int(x-dims[2]/2):int(x+dims[2]/2)]
         return subImage
