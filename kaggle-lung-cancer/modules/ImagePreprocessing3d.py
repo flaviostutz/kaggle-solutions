@@ -1,3 +1,7 @@
+from tflearn.data_preprocessing import DataPreprocessing
+import numpy as np
+import random
+
 class ImagePreprocessing3d(DataPreprocessing):
     """ Image Preprocessing.
     Base class for applying real-time image related pre-processing.

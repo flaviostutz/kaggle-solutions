@@ -1,4 +1,7 @@
 from tflearn.data_augmentation import DataAugmentation
+import random
+import numpy as np
+import scipy
 
 class ImageAugmentation3d(DataAugmentation):
     """ Image Augmentation in 3d.
@@ -68,7 +71,7 @@ class ImageAugmentation3d(DataAugmentation):
         Returns:
             Nothing.
         """
-        self.methods.append(self._random_z)
+        self.methods.append(self._random_flip_z)
         self.args.append(None)
 
     def add_random_90degrees_rotation(self, rotations=[0, 1, 2, 3]):
