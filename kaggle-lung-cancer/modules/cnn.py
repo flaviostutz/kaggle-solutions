@@ -66,15 +66,15 @@ def net_nodule3d_swethasubramanian(image_dims):
     net = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2], image_dims[3]], dtype=tf.float32, data_preprocessing=img_prep, data_augmentation=img_aug)
     
     #50
-    net = layers.conv.conv_3d(net, 30, 3, activation='relu')
+    net = layers.conv.conv_3d(net, 8, 3, activation='relu')
     net = layers.conv.max_pool_3d(net, 2)
     #64
-    net = layers.conv.conv_3d(net, 38, 3, activation='relu')
+    net = layers.conv.conv_3d(net, 10, 3, activation='relu')
     #64
-    net = layers.conv.conv_3d(net, 38, 3, activation='relu')
+    net = layers.conv.conv_3d(net, 12, 3, activation='relu')
     net = layers.conv.max_pool_3d(net, 2)
     #512
-    net = layers.core.fully_connected(net, 396, activation='relu')
+    net = layers.core.fully_connected(net, 64, activation='relu')
     net = layers.core.dropout(net, 0.5)
     net = layers.core.fully_connected(net, 2, activation='softmax')
 
