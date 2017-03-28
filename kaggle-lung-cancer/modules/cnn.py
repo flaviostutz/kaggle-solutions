@@ -48,7 +48,8 @@ def net_nodule2d_swethasubramanian(image_dims):
     return net
 
 #adapted from 2d version
-def net_nodule3d_swethasubramanian(image_dims):
+#reached 96% accuracy on luna16
+def net_nodule3d_swethasubramanian_v1(image_dims):
 
     #image augmentation
     img_aug = ImageAugmentation3d()
@@ -85,10 +86,10 @@ def net_nodule3d_swethasubramanian(image_dims):
 
 
 
-def evaluate_dataset(dataset_path, model, batch_size=12, confusion_matrix=False):
+def evaluate_dataset(dataset_path, model, batch_size=12, confusion_matrix=False, nr_items=-1):
     with h5py.File(dataset_path, 'r') as hdf5:
-        X = hdf5['X']
-        Y = hdf5['Y']
+        X = hdf5['X'][-1:nr_items]
+        Y = hdf5['Y'][-1:nr_items]
         logger.debug('X_test shape ' + str(X.shape))
         logger.debug('Y_test shape ' + str(Y.shape))
         
