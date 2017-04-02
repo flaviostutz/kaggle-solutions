@@ -7,6 +7,15 @@ from time import time
 
 from modules.logging import logger
 
+def dataset_xy_range(h5file, start_ratio, end_ratio):
+    X = h5file['X']
+    Y = h5file['Y']
+    
+    s = round(X.shape[0]*start_ratio)
+    e = round(X.shape[0]*end_ratio)
+
+    return X[s:e], Y[s:e]
+
 #this function crops image and handles edge conditions
 def crop_image_fill(image, p1, p2, fill_color=127):
     s = np.shape(image)
