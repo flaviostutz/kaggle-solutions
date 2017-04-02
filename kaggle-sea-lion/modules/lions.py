@@ -1,6 +1,7 @@
 import modules.utils as utils
 import numpy as np
 import cv2
+import scipy
 from tflearn.data_utils import to_categorical
 from modules.logging import logger
 
@@ -41,7 +42,7 @@ def find_class(image, point):
     return result
 
 
-def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, debug=False):
+def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, debug=False, min_distance_others=0):
    
     #BLACKOUT PORTIONS OF IMAGE IN RAW PICTURE
     image_dotted_bw = cv2.cvtColor(image_dotted, cv2.COLOR_BGR2GRAY)
@@ -68,34 +69,55 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
     debug_image = image_dotted.copy()
     images = []
     
+    #find all dotted sea lions
     count = 0
     count_class = np.zeros(5)
+    lion_positions = []
+    lion_classes = []
     im2, contours, hierarchy = cv2.findContours(diff, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     for c in contours:
         x,y,w,h = cv2.boundingRect(c)
         if(w>4 and h>4):
             count = count + 1
             center = (x+round(w/3),y+round(h/3))
+            lion_positions.append(center)
+            
             clazz = find_class(image_dotted, center)
-            #logger.info('found=' + str(clazz))
             count_class[clazz] = count_class[clazz] + 1
+            lion_classes.append(clazz)
 
-            #export patch to train dataset
-            #logger.info('export x, y to dataset. count=' + str(count))
-            pw = round(image_dims[1]/2)
-            ph = image_dims[1] - pw
-            trainX = utils.crop_image_fill(image_raw, (center[1]-pw,center[0]-pw), (center[1]+ph,center[0]+ph))
-            target_x_ds.resize((count, image_dims[0], image_dims[1], image_dims[2]))
-            target_x_ds[count-1:count] = trainX
-            
-            trainY = to_categorical([clazz], nb_classes=5)
-            target_y_ds.resize((count, 5))
-            target_y_ds[count-1:count] = trainY
-            
             if(debug):
-                images.append(trainX)
-                cv2.circle(debug_image,center,round(w/2),(0,0,255),1)
+                cv2.circle(debug_image,center,round(w/2),(255,0,0),1)
 
+
+    #add found sea lions to training dataset
+    #filter out lions that are too near each other to minimize noise on training set
+    for lion_pos in lion_positions:
+
+        #find distance between current lion and all other lions
+        if(min_distance_others>0):
+            dist = scipy.spatial.distance.cdist(lion_pos,lion_positions)
+            if(np.amin(dist)<=min_distance_others):
+                #skip this lion. it is too near others
+                continue
+        
+        #export patch to train dataset
+        #logger.info('export x, y to dataset. count=' + str(count))
+        pw = round(image_dims[1]/2)
+        ph = image_dims[1] - pw
+        trainX = utils.crop_image_fill(image_raw, (lion_pos[1]-pw,lion_pos[0]-pw), (lion_pos[1]+ph,lion_pos[0]+ph))
+        target_x_ds.resize((count, image_dims[0], image_dims[1], image_dims[2]))
+        target_x_ds[count-1:count] = trainX
+
+        trainY = to_categorical([clazz], nb_classes=5)
+        target_y_ds.resize((count, 5))
+        target_y_ds[count-1:count] = trainY
+
+        if(debug):
+            images.append(trainX)
+            cv2.circle(debug_image,center,round(w/2),(0,0,255),2)
+
+                
     if(debug):
         utils.show_image(debug_image, size=8, is_bgr=True)
         utils.show_images(images, cols=12, is_bgr=True, size=1.3)
