@@ -41,10 +41,8 @@ def find_class(image, point):
     return result
 
 
-def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, patch_size=50, debug=False):
+def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, debug=False):
    
-    psize = round(patch_size/2)
-
     #BLACKOUT PORTIONS OF IMAGE IN RAW PICTURE
     image_dotted_bw = cv2.cvtColor(image_dotted, cv2.COLOR_BGR2GRAY)
     #utils.show_image(image_dotted_bw, size=8)
@@ -84,7 +82,9 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
             #export patch to train dataset
             #logger.info('export x, y to dataset. count=' + str(count))
-            trainX = utils.crop_image_fill(image_raw, (center[1]-psize,center[0]-psize), (center[1]+psize,center[0]+psize))
+            pw = round(image_dims[1]/2)
+            ph = image_dims[1] - pw
+            trainX = utils.crop_image_fill(image_raw, (center[1]-pw,center[0]-pw), (center[1]+ph,center[0]+ph))
             target_x_ds.resize((count, image_dims[0], image_dims[1], image_dims[2]))
             target_x_ds[count-1:count] = trainX
             
@@ -98,7 +98,7 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
     if(debug):
         utils.show_image(debug_image, size=8, is_bgr=True)
-        utils.show_images(images, cols=14, is_bgr=True, size=1)
+        utils.show_images(images, cols=12, is_bgr=True, size=1.3)
         logger.info('total animals found: ' + str(count))
     
     return count_class
