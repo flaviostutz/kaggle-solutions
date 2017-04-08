@@ -5,6 +5,7 @@ import scipy
 from scipy import spatial
 import keras
 from modules.logging import logger
+import modules.utils as utils
 
 import tensorflow as tf
 from tflearn import layers
@@ -127,7 +128,8 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
         count2 = count2 + 1
         pw = round(image_dims[1]/2)
         ph = image_dims[1] - pw
-        trainX = utils.crop_image_fill(image_raw, (lion_pos[1]-pw,lion_pos[0]-pw), (lion_pos[1]+ph,lion_pos[0]+ph))
+        trainX = image_raw[lion_pos[1]-pw:lion_pos[1]+ph,lion_pos[0]-pw:lion_pos[0]+ph]
+        #trainX = utils.crop_image_fill(image_raw, (lion_pos[1]-pw,lion_pos[0]-pw), (lion_pos[1]+ph,lion_pos[0]+ph))
 
         if(debug):
             images.append(trainX)
@@ -135,14 +137,11 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
         #normalize between 0-1
         #trainX = trainX/255
-        target_x_ds.resize((count2, image_dims[0], image_dims[1], image_dims[2]))
-        target_x_ds[count2-1:count2] = trainX
+        trainY = keras.utils.to_categorical([lion_class], 5)[0]
+        
+        utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
 
         count_class_added[lion_class] = count_class_added[lion_class] + 1
-        
-        trainY = keras.utils.to_categorical(lion_class, 5)[0]
-        target_y_ds.resize((count2, 5))
-        target_y_ds[count2-1:count2] = trainY
 
     if(debug):
         utils.show_image(debug_image, size=8, is_bgr=True)
