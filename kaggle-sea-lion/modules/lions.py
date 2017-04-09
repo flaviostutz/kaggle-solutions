@@ -132,7 +132,9 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
                 if(debug):
                     images.append(trainX)
-                    cv2.circle(debug_image,center,round(w/2),(0,0,255),2)
+                    cv2.circle(debug_image,lion_pos,round(w/2),(0,0,255),2)
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    cv2.putText(debug_image,str(lion_class),lion_pos, font, 1.1,(255,255,255),2,cv2.LINE_AA)
 
                 #normalize between 0-1
                 #trainX = trainX/255
@@ -143,7 +145,7 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
     #identify non sea lion patches
     count3 = 0
     s = np.shape(image_raw)
-    for i in range(int(count2/2)):
+    for i in range(int(count2*1.1)):
         patch_pos = (random.randint(image_dims[1]*2, s[1]-image_dims[1]*2), random.randint(image_dims[0]*2, s[0]-image_dims[0]*2))
         is_distant = utils.is_distant_from_others(patch_pos, lion_positions, non_lion_distance)
 
@@ -160,7 +162,7 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
                 count3 = count3 + 1
                 if(debug):
                     images.append(trainX)
-                    cv2.circle(debug_image,center,round(w/2),(0,255,0),3)
+                    cv2.circle(debug_image,patch_pos,round(w/2),(0,255,0),3)
 
                 #normalize between 0-1
                 #trainX = trainX/255
@@ -175,7 +177,7 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
     logger.info('dataset size: ' + str(len(target_x_ds)))
                 
     if(debug):
-        utils.show_image(debug_image, size=20, is_bgr=True)
+        utils.show_image(debug_image, size=40, is_bgr=True)
         utils.show_images(images, cols=10, is_bgr=True, size=1.5)
     
     return count_class, count_class_added

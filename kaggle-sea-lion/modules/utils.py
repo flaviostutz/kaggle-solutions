@@ -57,18 +57,18 @@ def class_distribution(Y_categorical):
     count_classes = np.zeros(nr_classes)
     labels = categorical_to_label(Y_categorical)
     for y in labels:
-        count_classes[y] = count_classes[y] + 2
+        count_classes[y] = count_classes[y] + 1
     return count_classes
 
-def create_xy_dataset(h5file, x_dims, y_dims):
+def create_xy_dataset(h5file, x_dims, y_dims, x_dtype='f', y_dtype='u1'):
     x_dims_zero = np.concatenate(([0], np.asarray(x_dims))).tolist()
     x_dims_none = np.concatenate(([None], np.asarray(x_dims))).tolist()
 
     y_dims_zero = np.concatenate(([0], np.asarray(y_dims))).tolist()
     y_dims_none = np.concatenate(([None], np.asarray(y_dims))).tolist()
 
-    x_ds = h5file.create_dataset('X', x_dims_zero, maxshape=x_dims_none, chunks=True, dtype='f')
-    y_ds = h5file.create_dataset('Y', y_dims_zero, maxshape=y_dims_none, chunks=True, dtype='f')
+    x_ds = h5file.create_dataset('X', x_dims_zero, maxshape=x_dims_none, chunks=True, dtype=x_dtype)
+    y_ds = h5file.create_dataset('Y', y_dims_zero, maxshape=y_dims_none, chunks=True, dtype=y_dtype)
     
     return x_ds, y_ds
 
