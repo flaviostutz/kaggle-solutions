@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import cv2
 import numpy as np
 import shutil
@@ -8,10 +9,22 @@ import h5py
 import random
 import itertools
 from sklearn import preprocessing
+from scipy import spatial
 from keras import backend as K
 from keras.preprocessing.image import ImageDataGenerator
 
 from modules.logging import logger
+
+def is_distant_from_others(point, other_points, min_distance):
+    lp = np.array(point)
+    lp = np.reshape(lp, (1,2))
+
+    dist = spatial.distance.cdist(lp,other_points)[0]
+    if(len(dist)>1):
+        dist = np.sort(dist)[1:]
+        if(np.amin(dist)<=min_distance):
+            return False
+    return True
 
 #x_ds, y_ds: h5py datasets
 def add_sample_to_dataset(x_ds, y_ds, x_data, y_data):
@@ -237,25 +250,45 @@ def show_image(pixels, output_file=None, size=6, is_bgr=False, cmap=None):
         plt.show()
 
 #def show_slices(pixels, name, nr_slices=12, cols=4, output_dir=None, size=7):
-def show_images(image_list, image_labels=None, cols=4, name='image', output_dir=None, is_bgr=False, cmap=None, size=6):
+def show_images(image_list, image_labels=None, group_by_label=True, cols=4, name='image', output_dir=None, is_bgr=False, cmap=None, size=6):
     logger.info('showing ' + str(len(image_list)) + ' images')
     fig = plt.figure()
     rows = round(len(image_list)/cols)+1
     t = Timer('generating image patches. rows=' + str(rows) + '; cols=' + str(cols))
     fig.set_size_inches(cols*size, rows*size)
-    for i,im in enumerate(image_list):
+
+    image_indexes = range(len(image_list))
+
+    #order indexes by label
+    if(group_by_label==True and image_labels!=None):
+        index_label_map = []
+        for i,label in enumerate(image_labels):
+            index_label_map.append((i,label))
+        label_image_map = np.array(index_label_map, dtype=[('index',int),('label',int)])
+        label_image_map = np.sort(label_image_map, order='label')
+        image_indexes = []
+        for a in label_image_map:
+            image_indexes.append(a[0])
+
+    c = 0
+    for i in image_indexes:
+        im = image_list[i]
         if(is_bgr):
             im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        y = fig.add_subplot(rows,cols,i+1)
+        y = fig.add_subplot(rows,cols,c+1)
         if(cmap==None):
             im = im.astype('uint8')
         y.imshow(im, cmap=cmap)
         
         if(image_labels!=None):
-            np.random.seed(image_labels[i]+1)
-            circ = plt.Circle((5, 5), 10, color=np.random.rand(3,1))
-            y.add_patch(circ)
-    
+            np.random.seed(image_labels[i])
+            color = np.random.rand(3,1)
+            y.text(4, 17, str(image_labels[i]), fontsize=16, style='normal', bbox={'facecolor':color, 'alpha':1, 'pad':4})
+            y.text(4, np.shape(im)[1]-7, '[' + str(i) + ']', fontsize=12, style='normal')
+            #y.add_patch(patches.Rectangle((0, 0), np.shape(im)[0]-1, np.shape(im)[1]-1, color=color, linewidth=4, fill=False))
+            
+        c = c + 1
+            
     if(output_dir!=None):
         f = output_dir + name + '.jpg'
         plt.savefig(f)
