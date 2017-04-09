@@ -4,7 +4,7 @@ def logger0():
     global _console_logger
     if(not _console_logger):
         sh = logging.StreamHandler()
-        sh.setLevel(logging.DEBUG)
+        sh.setLevel(logging.INFO)
         sh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
         logger = logging.getLogger()
         logger.setLevel(logging.DEBUG)

@@ -12,8 +12,32 @@ from sklearn import preprocessing
 from scipy import spatial
 from keras import backend as K
 from keras.preprocessing.image import ImageDataGenerator
+from sys import stdout
 
 from modules.logging import logger
+
+def print_same_line(log, use_logger=True):
+    l = "\r{}".format(log)
+    stdout.write(l)
+    stdout.flush()
+    if(use_logger):
+        logger.debug(l)
+
+def print_progress(current_value, target_value, elapsed_seconds=None, size=25, log_each_seconds=None):
+    perc = (current_value/target_value)
+    pos = round(perc * size)
+    s = '|'
+    for i in range(pos):
+        s = s + '#'
+    for i in range(pos, size):
+        s = s + '-'
+    s = s + '| {:.0f}/{:.0f} {:d}%'.format(current_value, target_value, round(perc*100))
+    if(elapsed_seconds!=None):
+        s = s + ' {:d}s'.format(round(elapsed_seconds))
+    if(log_each_seconds!=None):
+        print_same_line(s, use_logger=(elapsed_seconds%log_each_seconds)==0)
+    else:
+        print_same_line(s)
 
 def is_distant_from_others(point, other_points, min_distance):
     lp = np.array(point)
@@ -60,7 +84,7 @@ def class_distribution(Y_categorical):
         count_classes[y] = count_classes[y] + 1
     return count_classes
 
-def create_xy_dataset(h5file, x_dims, y_dims, x_dtype='f', y_dtype='u1'):
+def create_xy_dataset(h5file, x_dims, y_dims, x_dtype='u1', y_dtype='u1'):
     x_dims_zero = np.concatenate(([0], np.asarray(x_dims))).tolist()
     x_dims_none = np.concatenate(([None], np.asarray(x_dims))).tolist()
 
@@ -136,8 +160,14 @@ def dataset_xy_balance_classes_image(input_h5file, output_h5file, max_augmentati
     y_labels = categorical_to_label(input_y_ds[()])
 
     pending_augmentations = np.zeros(nr_classes)
+    
+    ts = Timer('balancing dataset')
             
     for i,x in enumerate(input_x_ds):
+
+        if(i%20==0):
+            print_progress(i, len(input_x_ds), elapsed_seconds=ts.elapsed(), log_each_seconds=5)
+        
         y = input_y_ds[i]
         #x = input_x_ds[i]
         label = y_labels[i]
@@ -179,6 +209,8 @@ def dataset_xy_balance_classes_image(input_h5file, output_h5file, max_augmentati
                     #show_image(x_it, is_bgr=True)
 
             pending_augmentations[label] = pending_augmentations[label] - pending
+    
+    ts.stop()
     
     logger.info('done')
     
@@ -317,6 +349,7 @@ class Timer:
         self._name = name
         self._debug = debug
         self.start()
+        self._lastElapsed = None
     
     def start(self):
         self._start = time()
