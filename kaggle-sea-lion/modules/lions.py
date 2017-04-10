@@ -8,10 +8,11 @@ import modules.utils as utils
 import random
 
 import tensorflow as tf
-from tflearn import layers
-from tflearn.data_preprocessing import ImagePreprocessing
-from tflearn.data_augmentation import ImageAugmentation
-
+import keras
+from keras import models
+from keras import layers
+from keras.layers import convolutional
+from keras.layers import core
 
 #colors in bgr reference
 ADULT_MALES = 0
@@ -36,6 +37,73 @@ C_MAX = [
             np.array([255, 80, 40]),
             np.array([50, 255, 65])
         ]
+
+
+#adapted from alexnet
+def convnet_alexnet_lion_keras(image_dims):
+#    model = Sequential()
+#    model.add(Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
+
+    NR_CLASSES = 6
+
+    input = layers.Input(shape=image_dims, name="Input")
+    conv_1 = convolutional.Convolution2D(96, 11, 11, border_mode='valid', name="conv_1", activation='relu', init='glorot_uniform')(input)
+    pool_1 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_1")(conv_1)
+    zero_padding_1 = keras.layers.convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_1")(pool_1)
+    conv_2 = convolutional.Convolution2D(256, 3, 3, border_mode='valid', name="conv_2", activation='relu', init='glorot_uniform')(zero_padding_1)
+    pool_2 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_2")(conv_2)
+    zero_padding_2 = keras.layers.convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_2")(pool_2)
+    conv_3 = convolutional.Convolution2D(384, 3, 3, border_mode='valid', name="conv_3", activation='relu', init='glorot_uniform')(zero_padding_2)
+    conv_4 = convolutional.Convolution2D(384, 3, 3, border_mode='valid', name="conv_4", activation='relu', init='glorot_uniform')(conv_3)
+    conv_5 = convolutional.Convolution2D(256, 3, 3, border_mode='valid', name="conv_5", activation='relu', init='glorot_uniform')(conv_4)
+    pool_3 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_3")(conv_5)
+    flatten = core.Flatten(name="flatten")(pool_3)
+    fc_1 = core.Dense(4096, name="fc_1", activation='relu', init='glorot_uniform')(flatten)
+    fc_1 = core.Dropout(0.5, name="fc_1_dropout")(fc_1)
+    output = core.Dense(4096, name="Output", activation='relu', init='glorot_uniform')(fc_1)
+    output = core.Dropout(0.5, name="Output_dropout")(output)
+    fc_2 = core.Dense(NR_CLASSES, name="fc_2", activation='softmax', init='glorot_uniform')(output)
+
+    return models.Model([input], [fc_2])
+
+#adapted from alexnet
+def convnet_alexnet_lion_tflearn(image_dims):
+
+    #image augmentation
+    img_aug = ImageAugmentation()
+    img_aug.add_random_flip_leftright()
+    img_aug.add_random_flip_updown()
+    img_aug.add_random_rotation(max_angle=360.)
+    img_aug.add_random_blur(sigma_max=5.)
+    
+    #image pre-processing
+    img_prep = ImagePreprocessing()
+    img_prep.add_featurewise_zero_center()
+    img_prep.add_featurewise_stdnorm()
+    
+    #AlexNet
+    network = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2]], dtype=tf.float32, data_preprocessing=img_prep, data_augmentation=img_aug)
+    network = layers.conv.conv_2d(network, 96, 11, strides=4, activation='relu')
+    network = layers.conv.max_pool_2d(network, 3, strides=2)
+    network = layers.normalization.local_response_normalization(network)
+    network = layers.conv.conv_2d(network, 256, 5, activation='relu')
+    network = layers.conv.max_pool_2d(network, 3, strides=2)
+    network = layers.normalization.local_response_normalization(network)
+    network = layers.conv.conv_2d(network, 384, 3, activation='relu')
+    network = layers.conv.conv_2d(network, 384, 3, activation='relu')
+    network = layers.conv.conv_2d(network, 256, 3, activation='relu')
+    network = layers.conv.max_pool_2d(network, 3, strides=2)
+    network = layers.normalization.local_response_normalization(network)
+    network = layers.core.fully_connected(network, 4096, activation='tanh')
+    network = layers.core.dropout(network, 0.5)
+    network = layers.core.fully_connected(network, 4096, activation='tanh')
+    network = layers.core.dropout(network, 0.5)
+    network = layers.core.fully_connected(network, 5, activation='softmax')
+    network = layers.estimator.regression(network, optimizer='momentum', 
+                                          loss='categorical_crossentropy', learning_rate=0.001)
+    
+    return network
+
 
 def find_class(image, point):
     image = image[point[1]-3:point[1]+3,point[0]-3:point[0]+3]
@@ -181,42 +249,3 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
         utils.show_images(images, cols=10, is_bgr=True, size=1.5)
     
     return count_class, count_class_added
-
-
-#adapted from alexnet
-def convnet_alexnet_lion(image_dims):
-
-    #image augmentation
-    img_aug = ImageAugmentation()
-    img_aug.add_random_flip_leftright()
-    img_aug.add_random_flip_updown()
-    img_aug.add_random_rotation(max_angle=360.)
-    img_aug.add_random_blur(sigma_max=5.)
-    
-    #image pre-processing
-    img_prep = ImagePreprocessing()
-    img_prep.add_featurewise_zero_center()
-    img_prep.add_featurewise_stdnorm()
-    
-    #AlexNet
-    network = layers.core.input_data(shape=[None, image_dims[0], image_dims[1], image_dims[2]], dtype=tf.float32, data_preprocessing=img_prep, data_augmentation=img_aug)
-    network = layers.conv.conv_2d(network, 96, 11, strides=4, activation='relu')
-    network = layers.conv.max_pool_2d(network, 3, strides=2)
-    network = layers.normalization.local_response_normalization(network)
-    network = layers.conv.conv_2d(network, 256, 5, activation='relu')
-    network = layers.conv.max_pool_2d(network, 3, strides=2)
-    network = layers.normalization.local_response_normalization(network)
-    network = layers.conv.conv_2d(network, 384, 3, activation='relu')
-    network = layers.conv.conv_2d(network, 384, 3, activation='relu')
-    network = layers.conv.conv_2d(network, 256, 3, activation='relu')
-    network = layers.conv.max_pool_2d(network, 3, strides=2)
-    network = layers.normalization.local_response_normalization(network)
-    network = layers.core.fully_connected(network, 4096, activation='tanh')
-    network = layers.core.dropout(network, 0.5)
-    network = layers.core.fully_connected(network, 4096, activation='tanh')
-    network = layers.core.dropout(network, 0.5)
-    network = layers.core.fully_connected(network, 5, activation='softmax')
-    network = layers.estimator.regression(network, optimizer='momentum', 
-                                          loss='categorical_crossentropy', learning_rate=0.001)
-    
-    return network

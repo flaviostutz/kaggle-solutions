@@ -23,7 +23,7 @@ def print_same_line(log, use_logger=True):
     if(use_logger):
         logger.debug(l)
 
-def print_progress(current_value, target_value, elapsed_seconds=None, size=25, log_each_seconds=None):
+def print_progress(current_value, target_value, elapsed_seconds=None, status=None, size=25, use_logger=True):
     perc = (current_value/target_value)
     pos = round(perc * size)
     s = '|'
@@ -34,10 +34,9 @@ def print_progress(current_value, target_value, elapsed_seconds=None, size=25, l
     s = s + '| {:.0f}/{:.0f} {:d}%'.format(current_value, target_value, round(perc*100))
     if(elapsed_seconds!=None):
         s = s + ' {:d}s'.format(round(elapsed_seconds))
-    if(log_each_seconds!=None):
-        print_same_line(s, use_logger=(elapsed_seconds%log_each_seconds)==0)
-    else:
-        print_same_line(s)
+    if(status!=None):
+        s = s + ' ' + str(status)
+    print_same_line(s, use_logger=use_logger)
 
 def is_distant_from_others(point, other_points, min_distance):
     lp = np.array(point)
@@ -165,8 +164,8 @@ def dataset_xy_balance_classes_image(input_h5file, output_h5file, max_augmentati
             
     for i,x in enumerate(input_x_ds):
 
-        if(i%20==0):
-            print_progress(i, len(input_x_ds), elapsed_seconds=ts.elapsed(), log_each_seconds=5)
+        if(i%40==0):
+            print_progress(i, len(input_x_ds), elapsed_seconds=ts.elapsed(), use_logger=True)
         
         y = input_y_ds[i]
         #x = input_x_ds[i]
