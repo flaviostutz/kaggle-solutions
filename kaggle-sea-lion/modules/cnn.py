@@ -41,6 +41,7 @@ def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_la
         
         utils.plot_confusion_matrix(cm, normalize=False)
 
+        
 def evaluate_dataset_keras(X, Y, model, batch_size=24, detailed=True, class_labels=None):
     acc = model.evaluate(X, Y, batch_size=batch_size)
     logger.info('Accuracy: ' + str(acc))
@@ -66,6 +67,7 @@ def evaluate_dataset_keras(X, Y, model, batch_size=24, detailed=True, class_labe
         logger.info(cm)
         
         utils.plot_confusion_matrix(cm, normalize=False)
+        
         
 def train_batches_keras(X_train, Y_train, X_test, Y_test, epochs=5, datagenerator=None):
 

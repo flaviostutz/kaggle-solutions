@@ -19,25 +19,41 @@ from sys import stdout
 
 from modules.logging import logger
 
-def dataset_size_h5(h5file, start_ratio=0, end_ratio=1, dataset='Y'):
+def xy_generator_to_array(xy_generator, nr_batches):
+    Xds = np.array()
+    Yds = np.array()
+    count = 0
+    for x, y in test_generator:
+        count += 1
+        Xds.append(x)
+        Yds.append(y)
+        if(count==nr_batches):
+            break
+    return Xds, Yds
+
+def dataset_h5_batch_info(h5file, start_ratio=0, end_ratio=1, batch_size=32, dataset='Y'):
+    """Metatada info about a desired batch structure.
+       Returns: start_pos, end_pos, size, nr_batches
+    """
     ds = h5file[dataset]
     size = len(ds)
-    start_pos = start_ratio*size
-    end_pos = end_ratio*size
-    return end_pos - start_pos
+    start_pos = round(start_ratio*size)
+    end_pos = round(end_ratio*size)
+    msize = (end_pos-start_pos)
+    return start_pos, end_pos, msize, np.floor(msize/batch_size)
 
 def batch_generator_xy_h5(h5file, start_ratio=0, end_ratio=1, batch_size=64, x_dataset='X', y_dataset='Y'):
     if(start_ratio>end_ratio):
         raise Exception('End cannot be before start position')
+
+    start_pos, end_pos, size, nr_batches = dataset_h5_batch_info(h5file, start_ratio=start_ratio, end_ratio=end_ratio,
+batch_size=batch_size, dataset=y_dataset)
+    
+    counter = 0
     x_ds = h5file[x_dataset]
     y_ds = h5file[y_dataset]
-    size = len(x_ds)
-    start_pos = start_ratio*size
-    end_pos = end_ratio*size
-    number_of_batches = np.ceil(size/batch_size)
-    counter = 0
     while True:
-        batch_x = x_ds[start_pos + batch_size*counter:start_pos + batch_size*(counter+1)]
+        batch_x = x_ds[start_pos + batch_size*counter:start_pos + batch_size*(counter+1)-1]
         x_list = []
         y_list = []
             
@@ -49,11 +65,10 @@ def batch_generator_xy_h5(h5file, start_ratio=0, end_ratio=1, batch_size=64, x_d
         counter += 1
         x_list = np.array(x_list)
         y_list = np.array(y_list)
-        print(x_list.shape)
-        print(y_list.shape)
         yield x_list, y_list
-        if counter == number_of_batches:
+        if counter == nr_batches:
             counter = 0
+            print('BATCHES ENDED. GOING TO BEGINING')
 
 def image_batch_xy(source_batch_generator, image_data_generator, source_is_bgr=True):
     for items in source_batch_generator:
@@ -76,7 +91,6 @@ def image_batch_xy(source_batch_generator, image_data_generator, source_is_bgr=T
             xs.append(bx)
             ys.append(by[0])
         yield np.array(xs), np.array(ys)
-        
 
 def print_same_line(log, use_logger=True):
     l = "\r{}".format(log)
@@ -88,12 +102,13 @@ def print_same_line(log, use_logger=True):
 def print_progress(current_value, target_value, elapsed_seconds=None, status=None, size=25, use_logger=True):
     perc = (current_value/target_value)
     pos = round(perc * size)
-    s = '|'
+    s = '{:.0f}/{:.0f} ['.format(current_value, target_value)
     for i in range(pos):
-        s = s + '#'
+        s = s + '='
+    s = s + '>'
     for i in range(pos, size):
-        s = s + '-'
-    s = s + '| {:.0f}/{:.0f} {:d}%'.format(current_value, target_value, round(perc*100))
+        s = s + '.'
+    s = s + '] {:d}%'.format(round(perc*100))
     if(elapsed_seconds!=None):
         s = s + ' {:d}s'.format(round(elapsed_seconds))
     if(status!=None):
@@ -356,7 +371,6 @@ def show_image(pixels, output_file=None, size=6, is_bgr=False, cmap=None):
     else:
         plt.show()
 
-#def show_slices(pixels, name, nr_slices=12, cols=4, output_dir=None, size=7):
 def show_images(image_list, image_labels=None, group_by_label=True, cols=4, name='image', output_dir=None, is_bgr=False, cmap=None, size=6):
     logger.info('showing ' + str(len(image_list)) + ' images')
     fig = plt.figure()
