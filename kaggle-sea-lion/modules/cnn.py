@@ -13,7 +13,37 @@ import modules.logging
 import modules.utils as utils
 from modules.utils import Timer
 
+import keras
+
 _model = None
+
+class LoggingLogger(keras.callbacks.Callback):
+
+    def __init__(self):
+        super(LoggingLogger,self).__init__()
+        self.epoch = 0
+
+    def on_train_begin(self, logs=None):
+        self.verbose = self.params['verbose']
+        self.epochs = self.params['epochs']
+
+    def on_epoch_begin(self, epoch, logs=None):
+        self.epoch = epoch
+        logger.debug('epoch ' + str(self.epoch) + '/' + str(self.epochs))
+        self.target = self.params['steps']
+
+    def on_batch_begin(self, batch, logs=None):
+        logger.debug('batch ' + str(batch) + '/' + str(self.target))
+        logger.debug('epoch ' + str(self.epoch) + '/' + str(self.epochs))
+        for k in self.params['metrics']:
+            if k in logs:
+                logger.debug(str(k) + '=' + str(logs[k]))
+
+    def on_batch_end(self, batch, logs=None):
+        pass
+                
+    def on_epoch_end(self, epoch, logs=None):
+        pass
 
 def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_labels=None):
     acc = model.evaluate(X, Y, batch_size=batch_size)
