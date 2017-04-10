@@ -10,11 +10,73 @@ import random
 import itertools
 from sklearn import preprocessing
 from scipy import spatial
+
 from keras import backend as K
 from keras.preprocessing.image import ImageDataGenerator
+from keras.utils.io_utils import HDF5Matrix
+
 from sys import stdout
 
 from modules.logging import logger
+
+def dataset_size_h5(h5file, start_ratio=0, end_ratio=1, dataset='Y'):
+    ds = h5file[dataset]
+    size = len(ds)
+    start_pos = start_ratio*size
+    end_pos = end_ratio*size
+    return end_pos - start_pos
+
+def batch_generator_xy_h5(h5file, start_ratio=0, end_ratio=1, batch_size=64, x_dataset='X', y_dataset='Y'):
+    if(start_ratio>end_ratio):
+        raise Exception('End cannot be before start position')
+    x_ds = h5file[x_dataset]
+    y_ds = h5file[y_dataset]
+    size = len(x_ds)
+    start_pos = start_ratio*size
+    end_pos = end_ratio*size
+    number_of_batches = np.ceil(size/batch_size)
+    counter = 0
+    while True:
+        batch_x = x_ds[start_pos + batch_size*counter:start_pos + batch_size*(counter+1)]
+        x_list = []
+        y_list = []
+            
+        for i,x in enumerate(batch_x):
+            y = y_ds[i]
+            x_list.append(x)
+            y_list.append(y)
+            
+        counter += 1
+        x_list = np.array(x_list)
+        y_list = np.array(y_list)
+        print(x_list.shape)
+        print(y_list.shape)
+        yield x_list, y_list
+        if counter == number_of_batches:
+            counter = 0
+
+def image_batch_xy(source_batch_generator, image_data_generator, source_is_bgr=True):
+    for items in source_batch_generator:
+        xs = []
+        ys = []
+        for i,bx in enumerate(items[0]):
+            by = items[1][i]
+            
+            if(source_is_bgr):
+                bx = cv2.cvtColor(bx, cv2.COLOR_BGR2RGB)
+            
+            ir = image_data_generator.flow(np.array([bx]), np.array([by]), batch_size=1)
+            im = ir.next()
+            bx = im[0][0]
+            by = im[1]
+            
+            if(source_is_bgr):
+                bx = cv2.cvtColor(bx, cv2.COLOR_RGB2BGR)
+            
+            xs.append(bx)
+            ys.append(by[0])
+        yield np.array(xs), np.array(ys)
+        
 
 def print_same_line(log, use_logger=True):
     l = "\r{}".format(log)
@@ -213,7 +275,8 @@ def dataset_xy_balance_classes_image(input_h5file, output_h5file, max_augmentati
     
     logger.info('done')
     
-
+    
+    
 def plot_confusion_matrix(cm, class_labels=None,
                           normalize=False,
                           title='Confusion matrix',
@@ -253,6 +316,19 @@ def dataset_xy_range(h5file, start_ratio, end_ratio):
     e = round(X.shape[0]*end_ratio)
 
     return X[s:e], Y[s:e]
+
+def dataset_xy_hdf5matrix_keras(h5file_path, start_ratio, end_ratio):
+    s = None
+    e = None
+    with h5py.File(h5file_path, 'r') as h5file:
+        Y = h5file['Y']
+        s = round(Y.shape[0]*start_ratio)
+        e = round(Y.shape[0]*end_ratio)
+        
+    X = HDF5Matrix(h5file_path, 'X', start=s, end=e)
+    Y = HDF5Matrix(h5file_path, 'Y', start=s, end=e)
+    
+    return X, Y
 
 #this function crops image and handles edge conditions
 def crop_image_fill(image, p1, p2, fill_color=127):

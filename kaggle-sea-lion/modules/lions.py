@@ -49,7 +49,7 @@ def convnet_alexnet_lion_keras(image_dims):
     input = layers.Input(shape=image_dims, name="Input")
     conv_1 = convolutional.Convolution2D(96, 11, 11, border_mode='valid', name="conv_1", activation='relu', init='glorot_uniform')(input)
     pool_1 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_1")(conv_1)
-    zero_padding_1 = keras.layers.convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_1")(pool_1)
+    zero_padding_1 = convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_1")(pool_1)
     conv_2 = convolutional.Convolution2D(256, 3, 3, border_mode='valid', name="conv_2", activation='relu', init='glorot_uniform')(zero_padding_1)
     pool_2 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_2")(conv_2)
     zero_padding_2 = keras.layers.convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_2")(pool_2)
