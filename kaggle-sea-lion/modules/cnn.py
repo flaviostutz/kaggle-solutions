@@ -29,7 +29,6 @@ class LoggingLogger(keras.callbacks.Callback):
 
     def on_epoch_begin(self, epoch, logs=None):
         self.epoch = epoch
-        logger.debug('epoch ' + str(self.epoch) + '/' + str(self.epochs))
         self.target = self.params['steps']
 
     def on_batch_begin(self, batch, logs=None):
@@ -72,56 +71,50 @@ def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_la
         utils.plot_confusion_matrix(cm, normalize=False)
 
         
-def evaluate_dataset_keras(X, Y, model, batch_size=24, detailed=True, class_labels=None):
-    acc = model.evaluate(X, Y, batch_size=batch_size)
-    logger.info('Accuracy: ' + str(acc))
+def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed=True, class_labels=None):
+    logger.info('Evaluating model performance (' + str(nr_samples) + ' samples)...')
+    acc = model.evaluate_generator(xy_generator, nr_batches)
+    logger.info('Accuracy: ' + str(acc[1]) + ' - Loss: ' + str(acc[0]))
 
     if(detailed):
-        Y_pred = model.predict_label(X)
+        logger.info('Predicting Y for detailed analysis...')
+        Y_pred = model.predict_generator(xy_generator, nr_batches+1)
+        #sometimes predict_generator returns more samples than nr_batches*batch_size
+        Y_p = np.array(np.split(Y_pred, [nr_samples]))[0]
 
         #we only need the highest probability guess
-        Y_pred = np.flip(Y_pred, 1)
-        Y_pred = Y_pred[:,0]
+        Y_pred = np.swapaxes(Y_pred, 0, 1)
+        Y_pred = np.argmax(Y_p, axis=1)
 
         #convert from categorical to label
-        lb = preprocessing.LabelBinarizer()
-        lb.fit(np.array(range(5)))
-        Y = lb.inverse_transform(Y)
+        _, Y = utils.dump_xy_to_array(xy_generator, nr_samples)
+        if(len(Y)>0):
+            lb = preprocessing.LabelBinarizer()
+            lb.fit(np.array(range(np.shape(Y[0])[0])))
+            Y = lb.inverse_transform(Y)
 
-        logger.info('Nr test samples: ' + str(len(X)))
-        
-        logger.info('Kappa score (was this luck?): ' + str(metrics.cohen_kappa_score(Y, Y_pred)))
-        
-        cm = metrics.confusion_matrix(Y, Y_pred)
-        logger.info('Confusion matrix:')
-        logger.info(cm)
-        
-        utils.plot_confusion_matrix(cm, normalize=False)
-        
-        
-def train_batches_keras(X_train, Y_train, X_test, Y_test, epochs=5, datagenerator=None):
+            logger.info('Nr test samples: ' + str(len(Y)) + '|' + str(len(Y_pred)))
 
-    # compute quantities required for featurewise normalization
-    # (std, mean, and principal components if ZCA whitening is applied)
-    datagen.fit(X_train)
+            logger.info('Kappa score (was this luck?): ' + str(metrics.cohen_kappa_score(Y, Y_pred)))
 
-    for e in range(epochs):
-        print('-'*40)
-        print('Epoch', e)
-        print('-'*40)
-        print("Training...")
-        # batch train with realtime data augmentation
-        progbar = generic_utils.Progbar(X_train.shape[0])
-        for X_batch, Y_batch in buffered_gen_threaded(datagen.flow(X_train, Y_train), buffer_size=buffer_size):
-            loss = model.train_on_batch(X_batch, Y_batch)
-            progbar.add(X_batch.shape[0], values=[("train loss", loss)])
+            cm = metrics.confusion_matrix(Y, Y_pred)
+            logger.info('Confusion matrix:')
+            logger.info(cm)
+        
+            utils.plot_confusion_matrix(cm, normalize=False)
+        else:
+            logger.info('No samples found in xy_generator')
 
-        print("Testing...")
-        # test time!
-        progbar = generic_utils.Progbar(X_test.shape[0])
-        for X_batch, Y_batch in buffered_gen_threaded(datagen.flow(X_test, Y_test), buffer_size=buffer_size):
-            score = model.test_on_batch(X_batch, Y_batch)
-            progbar.add(X_batch.shape[0], values=[("test loss", score)])        
+
+def get_callbacks_keras(model, weights_dir, tf_logs_dir):
+    weights_file = weights_dir + 'weights-{epoch:02d}-{val_acc:.2f}.h5'
+    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tf_logs_dir, histogram_freq=0, write_graph=True, write_images=True)
+    tensorboard_callback.set_model(model)
+    checkpoint_callback = keras.callbacks.ModelCheckpoint(weights_file, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
+    progbar_callback = keras.callbacks.ProgbarLogger(count_mode='steps')
+    logger_callback = LoggingLogger()
+    
+        
         
 def prepare_model_dirs_tflearn(output_dir):
     dir_tflogs = output_dir + 'tf-logs'
@@ -159,19 +152,25 @@ def prepare_cnn_model_tflearn(network, output_dir, model_file=None):
     return _model
 
 def show_training_info_keras(history):
+    fig = plt.figure()
+    fig.set_size_inches(8, 3)
+
+    plt.subplot(121)
     plt.plot(history.history['acc'])
     plt.plot(history.history['val_acc'])
     plt.title('model accuracy')
-    plt.ylabel('accuracy')
+    #plt.ylabel('accuracy')
     plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
-    plt.show()
+    plt.legend(['train', 'validate'], loc='upper left')
+    
     # summarize history for loss
+    plt.subplot(122)
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
     plt.title('model loss')
-    plt.ylabel('loss')
+    #plt.ylabel('loss')
     plt.xlabel('epoch')
-    plt.legend(['train', 'test'], loc='upper left')
+    plt.legend(['train', 'validate'], loc='upper left')
+    
     plt.show()
     

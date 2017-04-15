@@ -19,113 +19,280 @@ from sys import stdout
 
 from modules.logging import logger
 
-def xy_generator_to_array(xy_generator, nr_batches):
-    Xds = np.array()
-    Yds = np.array()
-    count = 0
-    for x, y in test_generator:
-        count += 1
-        Xds.append(x)
-        Yds.append(y)
-        if(count==nr_batches):
-            break
-    return Xds, Yds
+class BatchGeneratorXYH5:
+    """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit on memory"""
+    def __init__(self, h5file, start_ratio=0, end_ratio=1, batch_size=64, x_dataset='X', y_dataset='Y', loop=True):
+        if(start_ratio>end_ratio):
+            raise Exception('End cannot be before start position')
+        
+        self.h5file = h5file
+        self.start_ratio = start_ratio
+        self.end_ratio = end_ratio
+        self.batch_size = batch_size
+        self.x_dataset = x_dataset
+        self.y_dataset = y_dataset
+        self.loop = loop
+        
+        ds = h5file[y_dataset]
+        ds_size = len(ds)
+        self.start_pos = round(start_ratio*ds_size)
+        self.end_pos = round(end_ratio*ds_size)
+        self.size = (self.end_pos-self.start_pos)
+        self.size = self.size - (self.size%batch_size)
+        self.nr_batches = np.floor(self.size/batch_size)
 
-def dataset_h5_batch_info(h5file, start_ratio=0, end_ratio=1, batch_size=32, dataset='Y'):
-    """Metatada info about a desired batch structure.
-       Returns: start_pos, end_pos, size, nr_batches
-    """
-    ds = h5file[dataset]
-    size = len(ds)
-    start_pos = round(start_ratio*size)
-    end_pos = round(end_ratio*size)
-    msize = (end_pos-start_pos)
-    return start_pos, end_pos, msize, np.floor(msize/batch_size)
+    def flow(self, loop=None):
+        if(loop==None):
+            loop = self.loop
+        counter = 0
+        x_ds = self.h5file[self.x_dataset]
+        y_ds = self.h5file[self.y_dataset]
+        while True:
+            if counter == self.nr_batches:
+                if(loop and self.nr_batches>0):
+                    counter = 0
+                else:
+                    return
+            batch_x = x_ds[self.start_pos + self.batch_size*counter:self.start_pos + self.batch_size*(counter+1)]
+            x_list = []
+            y_list = []
 
-def batch_generator_xy_h5(h5file, start_ratio=0, end_ratio=1, batch_size=64, x_dataset='X', y_dataset='Y'):
-    if(start_ratio>end_ratio):
-        raise Exception('End cannot be before start position')
+            for i,x in enumerate(batch_x):
+                y = y_ds[i]
+                x_list.append(x)
+                y_list.append(y)
+            
+            x_list = np.array(x_list)
+            y_list = np.array(y_list)
+            yield x_list, y_list
+            counter += 1
 
-    start_pos, end_pos, size, nr_batches = dataset_h5_batch_info(h5file, start_ratio=start_ratio, end_ratio=end_ratio,
-batch_size=batch_size, dataset=y_dataset)
     
-    counter = 0
-    x_ds = h5file[x_dataset]
-    y_ds = h5file[y_dataset]
-    while True:
-        batch_x = x_ds[start_pos + batch_size*counter:start_pos + batch_size*(counter+1)-1]
-        x_list = []
-        y_list = []
-            
-        for i,x in enumerate(batch_x):
-            y = y_ds[i]
-            x_list.append(x)
-            y_list.append(y)
-            
-        counter += 1
-        x_list = np.array(x_list)
-        y_list = np.array(y_list)
-        yield x_list, y_list
-        if counter == nr_batches:
-            counter = 0
-            print('BATCHES ENDED. GOING TO BEGINING')
+class ClassBalancerGeneratorXY:
+    """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
+    def __init__(self, source_xy_generator, source_size, batch_size=64, max_augmentation_ratio=3, max_undersampling_ratio=1, classes_distribution_weight=1, start_ratio=0, end_ratio=1, enforce_max_ratios=False, image_augmentation=None, max_size=None, output_dtype='uint8'):
+        self.source_xy_generator = source_xy_generator
+        self.max_size = max_size
+        self.batch_size = batch_size
+        self.output_dtype = output_dtype
+        self.x_batch = np.array([]).astype(output_dtype)
+        self.y_batch = np.array([]).astype(output_dtype)
+        self.image_augmentation = image_augmentation
 
-def image_batch_xy(source_batch_generator, image_data_generator, source_is_bgr=True):
-    for items in source_batch_generator:
-        xs = []
-        ys = []
-        for i,bx in enumerate(items[0]):
-            by = items[1][i]
+        self.start_ratio = start_ratio
+        self.end_ratio = end_ratio
+        self.start_pos = round(start_ratio*source_size)
+        self.end_pos = round(end_ratio*source_size)
+        self.size = (self.end_pos-self.start_pos)
+        self.size = self.size - (self.size%batch_size)
+        self.nr_batches = np.floor(self.size/batch_size)
+        
+        logger.info('analysing input data class distribution')
+        _, self.Y_onehot = dump_xy_to_array(source_xy_generator, source_size)
+        self.count_classes = class_distribution(self.Y_onehot)
+        self.nr_classes = np.shape(self.count_classes)[0]
+
+        smallest_class = None
+        smallest_qtty = 999999999
+        largest_class = None
+        largest_qtty = 0
+        logger.info('raw sample class distribution')
+        for i,c in enumerate(self.count_classes):
+            logger.info(str(i) + ': ' + str(c))
+            if(c<smallest_qtty):
+                smallest_qtty = c
+                smallest_class = i
+            if(c>largest_qtty):
+                largest_qtty = c
+                largest_class = i
+
+        minq = largest_qtty - largest_qtty*max_undersampling_ratio
+        maxq = smallest_qtty + smallest_qtty*max_augmentation_ratio
+
+        qtty_per_class = max(minq, maxq)
+        logger.info('overall items per class: ' + str(qtty_per_class))
+
+        logger.info('augmentation/undersampling ratio per class')
+        self.ratio_classes = np.zeros(len(self.count_classes))
+        for i,c in enumerate(self.count_classes):
+            if(c==0):
+                self.ratio_classes[i] = 0
+            else:
+                self.ratio_classes[i] = qtty_per_class/c
+            if(enforce_max_ratios):
+                if(self.ratio_classes[i]<1):
+                    self.ratio_classes[i] = max((1-max_undersampling_ratio), self.ratio_classes[i])
+                elif(self.ratio_classes[i]>1):
+                    self.ratio_classes[i] = min(1+max_augmentation_ratio, self.ratio_classes[i])
+
+        self.ratio_classes = classes_distribution_weight * self.ratio_classes
+        for i,ratio in enumerate(self.ratio_classes):
+            logger.info(str(i) + ': ' + str(ratio))
+    
+    #x_ds, y_ds: h5py datasets
+    def _add_to_batch(self,x,y):
+        if(len(self.x_batch)==0):
+            self.x_batch.resize([0] + list(x.shape))
+        x_shape = np.array(self.x_batch.shape)
+        x_shape[0] = x_shape[0] + 1
+        x_shape = list(x_shape)
+        self.x_batch = np.resize(self.x_batch, x_shape)
+        self.x_batch[x_shape[0]-1] = x
+
+        if(len(self.y_batch)==0):
+            self.y_batch.resize([0] + list(y.shape))
+        y_shape = np.array(self.y_batch.shape)
+        y_shape[0] = y_shape[0] + 1
+        y_shape = list(y_shape)
+        self.y_batch = np.resize(self.y_batch, y_shape)
+        self.y_batch[y_shape[0]-1] = y
+
+    
+    def flow(self):
+        logger.info('generating next batch 1')
+        if(np.sum(self.ratio_classes)==0):
+            raise StopIteration('no item will be returned by this iterator')
+
+        y_labels = onehot_to_label(self.Y_onehot)
+        pending_augmentations = np.zeros(self.nr_classes, dtype='uint32')
+
+        count_samples = 0
+        
+        #process each batch
+        for xs,ys in self.source_xy_generator:
+            for i,x in enumerate(xs):
+                y = ys[i]
             
-            if(source_is_bgr):
-                bx = cv2.cvtColor(bx, cv2.COLOR_BGR2RGB)
-            
-            ir = image_data_generator.flow(np.array([bx]), np.array([by]), batch_size=1)
-            im = ir.next()
-            bx = im[0][0]
-            by = im[1]
-            
-            if(source_is_bgr):
-                bx = cv2.cvtColor(bx, cv2.COLOR_RGB2BGR)
-            
-            xs.append(bx)
-            ys.append(by[0])
-        yield np.array(xs), np.array(ys)
+                if(self.max_size!=None and count_samples>=self.max_size):
+                    break
 
-def print_same_line(log, use_logger=True):
-    l = "\r{}".format(log)
-    stdout.write(l)
-    stdout.flush()
-    if(use_logger):
-        logger.debug(l)
+                label = y_labels[i]
+                r = self.ratio_classes[label]
 
-def print_progress(current_value, target_value, elapsed_seconds=None, status=None, size=25, use_logger=True):
-    perc = (current_value/target_value)
-    pos = round(perc * size)
-    s = '{:.0f}/{:.0f} ['.format(current_value, target_value)
-    for i in range(pos):
-        s = s + '='
-    s = s + '>'
-    for i in range(pos, size):
-        s = s + '.'
-    s = s + '] {:d}%'.format(round(perc*100))
-    if(elapsed_seconds!=None):
-        s = s + ' {:d}s'.format(round(elapsed_seconds))
-    if(status!=None):
-        s = s + ' ' + str(status)
-    print_same_line(s, use_logger=use_logger)
+                #add sample
+                if(r==1):
+                    self._add_to_batch(x,y)
+#                    logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
+                    if(len(self.y_batch)>=self.batch_size):
+                        logger.info('yielding batch1')
+                        yield self.x_batch,self.y_batch
+                        self.x_batch = np.array([]).astype(self.output_dtype)
+                        self.y_batch = np.array([]).astype(self.output_dtype)
 
-def is_distant_from_others(point, other_points, min_distance):
-    lp = np.array(point)
-    lp = np.reshape(lp, (1,2))
+                #undersample
+                if(r<1):
+                    #accept sample at the rate it should so we balance classes
+                    rdm = random.random()
+                    if(rdm<=r):
+                        self._add_to_batch(x,y)                        
+#                        logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
+                        if(len(self.y_batch)>=self.batch_size):
+                            logger.info('yielding batch2')
+                            yield self.x_batch,self.y_batch
+                            self.x_batch = np.array([]).astype(self.output_dtype)
+                            self.y_batch = np.array([]).astype(self.output_dtype)
 
-    dist = spatial.distance.cdist(lp,other_points)[0]
-    if(len(dist)>1):
-        dist = np.sort(dist)[1:]
-        if(np.amin(dist)<=min_distance):
-            return False
-    return True
+                #augmentation
+                elif(r>1):
+                    #accept sample
+                    self._add_to_batch(x,y)                        
+#                    logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
+                    if(len(self.y_batch)>=self.batch_size):
+                        logger.info('yielding batch3')
+                        yield self.x_batch,self.y_batch
+                        self.x_batch = np.array([]).astype(self.output_dtype)
+                        self.y_batch = np.array([]).astype(self.output_dtype)
+                    
+                    pending_augmentations[label] = pending_augmentations[label] + (r-1)
+                    pending = int(round(pending_augmentations[label]))
 
+                    #generate augmented copies of images so we balance classes
+                    if(pending>0):
+                        x1 = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
+                        x_orig = np.array([x1])
+                        y_orig = np.array([y])
+
+                        #show_image(x_orig[0], is_bgr=False)
+                        ir = self.image_augmentation.flow(x_orig, y_orig, batch_size=1)
+                        for i in range(pending):
+                            it = ir.next()
+                            x_it = it[0][0]
+                            y_it = it[1]
+                            x_it = cv2.cvtColor(x_it, cv2.COLOR_RGB2BGR)
+                            
+                            self._add_to_batch(x,y)                        
+#                            logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
+                            if(len(self.y_batch)>=self.batch_size):
+                                logger.info('yielding batch4')
+                                yield self.x_batch,self.y_batch
+                                self.x_batch = np.array([]).astype(self.output_dtype)
+                                self.y_batch = np.array([]).astype(self.output_dtype)
+                                
+                            pending_augmentations[label] = pending_augmentations[label] - pending
+
+    
+def dump_xy_to_dataset(xy_generator, output_h5file, x_dtype='u1', y_dtype='u1', qtty=None):
+    """ print('dump train data')
+with h5py.File(OUTPUT_DIR + '/test.h5', 'w') as outh5:
+    utils.dump_xy_dataset(train_generator, outh5, qtty=12)
+    """
+    x_ds = None
+    y_ds = None
+    for xs,ys in xy_generator:
+        if(y_ds == None):
+            x_ds,y_ds = create_xy_dataset(output_h5file, xs[0].shape, ys[0].shape, x_dtype=x_dtype, y_dtype=y_dtype)
+        for i,x in enumerate(xs):
+            y = ys[i]
+            add_sample_to_dataset(x_ds, y_ds, x, y)
+            if(len(y_ds)>=qtty):
+                return
+
+def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True):
+    """Dump generator contents into a numpy array. Use x and y parameters to avoid dumping too much data from x (or sometimes y)"""
+    Xds = np.array([])
+    Yds = np.array([])
+    count = 0
+    t = Timer('generator dump')
+    for x_data,y_data in xy_generator:
+        if(count==0):
+            s = np.array(np.shape(x_data))
+            s[0] = 0
+            Xds = np.reshape(Xds, s.tolist())
+            s = np.array(np.shape(y_data))
+            s[0] = 0
+            Yds = np.reshape(Yds, s.tolist())
+        count += len(y_data)
+        if(x):
+            Xds = np.concatenate((Xds, x_data))
+            if(len(Xds)>nr_samples):
+                Xds = np.split(Xds, [nr_samples])[0]
+        if(y):
+            Yds = np.concatenate((Yds, y_data))
+            if(len(Yds)>=nr_samples):
+                Yds = np.split(Yds, [nr_samples])[0]
+                
+        print_same_line(str(count) + '/' + str(nr_samples))
+                
+        if(count>=nr_samples):
+            break
+
+    t.stop()
+    return Xds, Yds
+    
+
+def create_xy_dataset(h5file, x_dims, y_dims, x_dtype='u1', y_dtype='u1'):
+    x_dims_zero = np.concatenate(([0], np.asarray(x_dims))).tolist()
+    x_dims_none = np.concatenate(([None], np.asarray(x_dims))).tolist()
+
+    y_dims_zero = np.concatenate(([0], np.asarray(y_dims))).tolist()
+    y_dims_none = np.concatenate(([None], np.asarray(y_dims))).tolist()
+
+    x_ds = h5file.create_dataset('X', x_dims_zero, maxshape=x_dims_none, chunks=True, dtype=x_dtype)
+    y_ds = h5file.create_dataset('Y', y_dims_zero, maxshape=y_dims_none, chunks=True, dtype=y_dtype)
+    
+    return x_ds, y_ds
+    
+    
 #x_ds, y_ds: h5py datasets
 def add_sample_to_dataset(x_ds, y_ds, x_data, y_data):
     x_shape = np.array(x_ds.shape)
@@ -143,155 +310,91 @@ def add_sample_to_dataset(x_ds, y_ds, x_data, y_data):
     y_ds.resize(y_shape)
     y_ds[y_shape[0]-1] = y_data
 
-#convert from categorical to label
-#Y_categorical: numpy array with one hot encoding data (ex.: 0,0,1,0,0)
-def categorical_to_label(Y_categorical):
-    nr_classes = Y_categorical.shape[1]
-    lb = preprocessing.LabelBinarizer()
-    lb.fit(np.array(range(nr_classes)))
-    return lb.inverse_transform(Y_categorical)
 
+def image_augmentation_xy(source_batch_generator, image_generator, source_is_bgr=True):
+    for items in source_batch_generator:
+        xs = []
+        ys = []
+        for i,bx in enumerate(items[0]):
+            by = items[1][i]
+            
+            if(source_is_bgr):
+                bx = cv2.cvtColor(bx, cv2.COLOR_BGR2RGB)
+            
+            ir = image_generator.flow(np.array([bx]), np.array([by]), batch_size=1)
+            im = ir.next()
+            bx = im[0][0]
+            by = im[1]
+            
+            if(source_is_bgr):
+                bx = cv2.cvtColor(bx, cv2.COLOR_RGB2BGR)
+            
+            xs.append(bx)
+            ys.append(by[0])
+        yield np.array(xs), np.array(ys)
+
+        
+def print_same_line(log, use_logger=True):
+    l = "\r{}".format(log)
+    stdout.write(l)
+    stdout.flush()
+    if(use_logger):
+        logger.debug(l)
+
+        
+def print_progress(current_value, target_value, elapsed_seconds=None, status=None, size=25, use_logger=True):
+    perc = (current_value/target_value)
+    pos = round(perc * size)
+    s = '{:.0f}/{:.0f} ['.format(current_value, target_value)
+    for i in range(pos):
+        s = s + '='
+    s = s + '>'
+    for i in range(pos, size):
+        s = s + '.'
+    s = s + '] {:d}%'.format(round(perc*100))
+    if(elapsed_seconds!=None):
+        s = s + ' {:d}s'.format(round(elapsed_seconds))
+    if(status!=None):
+        s = s + ' ' + str(status)
+    print_same_line(s, use_logger=use_logger)
+
+    
+def is_distant_from_others(point, other_points, min_distance):
+    lp = np.array(point)
+    lp = np.reshape(lp, (1,2))
+
+    dist = spatial.distance.cdist(lp,other_points)[0]
+    if(len(dist)>1):
+        dist = np.sort(dist)[1:]
+        if(np.amin(dist)<=min_distance):
+            return False
+    return True
+
+
+def onehot_to_label(Y_onehot):
+    """Convert from one hot encoding array to class label index
+       Y_onehot: numpy array with one hot encoding data (ex.: 0,0,1,0,0). If non array is detected, it will return the input itself
+       y = np.array([[1,0,0,0,0,0],[0,1,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,1]])
+print(onehot_to_label(y))"""
+    if(len(Y_onehot.shape)==1):
+        return Y_onehot
+    else:
+        nr_classes = Y_onehot.shape[1]
+        lb = preprocessing.LabelBinarizer()
+        lb.fit(np.array(range(nr_classes)))
+        return lb.inverse_transform(Y_onehot)
+
+    
 #Y_categorical: numpy array with one hot encoding data
-def class_distribution(Y_categorical):
-    nr_classes = Y_categorical.shape[1]
+def class_distribution(Y_onehot):
+    nr_classes = Y_onehot.shape[1]
     count_classes = np.zeros(nr_classes)
-    labels = categorical_to_label(Y_categorical)
+    labels = onehot_to_label(Y_onehot)
     for y in labels:
         count_classes[y] = count_classes[y] + 1
-    return count_classes
+    return count_classes.astype('uint32')
 
-def create_xy_dataset(h5file, x_dims, y_dims, x_dtype='u1', y_dtype='u1'):
-    x_dims_zero = np.concatenate(([0], np.asarray(x_dims))).tolist()
-    x_dims_none = np.concatenate(([None], np.asarray(x_dims))).tolist()
 
-    y_dims_zero = np.concatenate(([0], np.asarray(y_dims))).tolist()
-    y_dims_none = np.concatenate(([None], np.asarray(y_dims))).tolist()
-
-    x_ds = h5file.create_dataset('X', x_dims_zero, maxshape=x_dims_none, chunks=True, dtype=x_dtype)
-    y_ds = h5file.create_dataset('Y', y_dims_zero, maxshape=y_dims_none, chunks=True, dtype=y_dtype)
-    
-    return x_ds, y_ds
-
-#max_augmentation_rotation=20, max_augmentation_shift=0, max_augmentation_scale=1, augmentation_flip_leftright=True, augmentation_flip_updown=True
-def dataset_xy_balance_classes_image(input_h5file, output_h5file, max_augmentation_ratio=3, max_undersampling_ratio=1, classes_distribution_weight=1, enforce_max_ratios=False, image_data_generator=None):
-    if(image_data_generator==None):
-        image_data_generator = ImageDataGenerator(
-            rotation_range=360,
-            fill_mode='wrap',
-            cval=127,
-            data_format=K.image_data_format())
-
-    input_x_ds = input_h5file['X']
-    input_y_ds = input_h5file['Y']
-    if(len(input_x_ds)==0):
-        raise Exception('No data found on input dataset')
-    x_dims = input_x_ds.shape[1:]
-    y_dims = input_y_ds.shape[1:]
-
-    nr_classes = input_y_ds.shape[1]
-
-    t = Timer('traversing entire dataset in order to extract population classes distribution')
-    count_classes = class_distribution(input_y_ds[()])
-    t.stop()
-
-    logger.info('population distribution')
-    smallest_class = None
-    smallest_qtty = 999999999
-    largest_class = None
-    largest_qtty = 0
-    for i,c in enumerate(count_classes):
-        logger.info(str(i) + ': ' + str(c))
-        if(c<smallest_qtty):
-            smallest_qtty = c
-            smallest_class = i
-        if(c>largest_qtty):
-            largest_qtty = c
-            largest_class = i
-    
-    minq = largest_qtty - largest_qtty*max_undersampling_ratio
-    maxq = smallest_qtty + smallest_qtty*max_augmentation_ratio
-
-    qtty_per_class = max(minq, maxq)
-    logger.info('targeting items per class: ' + str(qtty_per_class))
-
-    logger.info('augmentation/undersampling ratio per class')
-    ratio_classes = np.zeros(nr_classes)
-    for i,c in enumerate(count_classes):
-        if(c==0):
-            raise Exception('Class ' + str(i) + ' has zero samples. Aborting class balancing')
-        ratio_classes[i] = qtty_per_class/c
-        if(enforce_max_ratios):
-            if(ratio_classes[i]<1):
-                ratio_classes[i] = max((1-max_undersampling_ratio), ratio_classes[i])
-            elif(ratio_classes[i]>1):
-                ratio_classes[i] = min(1+max_augmentation_ratio, ratio_classes[i])
-        logger.info(str(i) + ': ' + str(ratio_classes[i]))
-
-    ratio_classes = classes_distribution_weight * ratio_classes
-    logger.info(str(i) + ': ' + str(ratio_classes[i]))
-
-    output_x_ds, output_y_ds = create_xy_dataset(output_h5file, x_dims, y_dims)
-
-    logger.info('iterating over input dataset for generating a new balanced dataset using undersampling and/or augmentation')
-    y_labels = categorical_to_label(input_y_ds[()])
-
-    pending_augmentations = np.zeros(nr_classes)
-    
-    ts = Timer('balancing dataset')
-            
-    for i,x in enumerate(input_x_ds):
-
-        if(i%40==0):
-            print_progress(i, len(input_x_ds), elapsed_seconds=ts.elapsed(), use_logger=True)
-        
-        y = input_y_ds[i]
-        #x = input_x_ds[i]
-        label = y_labels[i]
-        r = ratio_classes[label]
-
-        #add sample
-        if(r==1):
-            add_sample_to_dataset(output_x_ds, output_y_ds, x, y)
-               
-        #undersample
-        if(r<1):
-            #accept sample at the rate it should so we balance classes
-            rdm = random.random()
-            if(rdm<=r):
-                add_sample_to_dataset(output_x_ds, output_y_ds, x, y)
-
-        #augmentation
-        elif(r>1):
-            #accept sample
-            add_sample_to_dataset(output_x_ds, output_y_ds, x, y)
-            pending_augmentations[label] = pending_augmentations[label] + (r-1)
-
-            pending = int(round(pending_augmentations[label]))
-
-            #generate augmented copies of images so we balance classes
-            if(pending>0):
-                x1 = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
-                x_orig = np.array([x1])
-                y_orig = np.array([y])
-
-                #show_image(x_orig[0], is_bgr=False)
-                ir = image_data_generator.flow(x_orig, y_orig, batch_size=1)
-                for i in range(pending):
-                    it = ir.next()
-                    x_it = it[0][0]
-                    y_it = it[1]
-                    x_it = cv2.cvtColor(x_it, cv2.COLOR_RGB2BGR)
-                    add_sample_to_dataset(output_x_ds, output_y_ds, x_it, y_it)
-                    #show_image(x_it, is_bgr=True)
-
-            pending_augmentations[label] = pending_augmentations[label] - pending
-    
-    ts.stop()
-    
-    logger.info('done')
-    
-    
-    
 def plot_confusion_matrix(cm, class_labels=None,
                           normalize=False,
                           title='Confusion matrix',
