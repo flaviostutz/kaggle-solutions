@@ -34,19 +34,18 @@ class BatchGeneratorXYH5:
 
         ds_size = len(self.y_ds)
 
-        start_pos = round(start_ratio*ds_size)
-        end_pos = round(end_ratio*ds_size)
+        start_pos = int(np.floor(start_ratio*ds_size))
+        end_pos = int(np.ceil(end_ratio*ds_size))
         self.setup_flow(start_pos, end_pos)
         
     def setup_flow(self, start_pos, end_pos):
         self.start_pos = start_pos
         self.end_pos = end_pos
         self.size = end_pos-start_pos
-        self.size = self.size-(self.size%self.batch_size)
-        self.nr_batches = np.floor(self.size/self.batch_size)
+        #self.size = self.size-(self.size%self.batch_size)
+        self.nr_batches = int(np.ceil(self.size/self.batch_size))
         
     def flow(self, loop=True):
-
         counter = 0
         while True:
             if counter == self.nr_batches:
@@ -55,12 +54,14 @@ class BatchGeneratorXYH5:
                 else:
                     return
 
-            batch_x = self.x_ds[self.start_pos + self.batch_size*counter:self.start_pos + self.batch_size*(counter+1)]
+            ds_slice = slice(int(np.floor(self.start_pos + self.batch_size*counter)),int(np.ceil(self.start_pos + self.batch_size*(counter+1))))
+            batch_x = self.x_ds[ds_slice]
+            batch_y = self.y_ds[ds_slice]
             x_list = []
             y_list = []
 
             for i,x in enumerate(batch_x):
-                y = self.y_ds[i]
+                y = batch_y[i]
                 x_list.append(x)
                 y_list.append(y)
             
@@ -130,19 +131,18 @@ class ClassBalancerGeneratorXY:
             class_total = np.floor(self.count_classes[i]*ratio)
             logger.info(str(i) + ': ' + str(ratio) + ' (' + str(class_total*total_samples_ratio) + ')')
             self.output_total_size += class_total
+
+        logger.info('output total size ' + str(self.output_total_size))
+        self.size = int(self.output_total_size * total_samples_ratio)
         
-        self.size = self.output_total_size * total_samples_ratio
-        
-        self.size = int(self.size - (self.size%batch_size))
-        self.nr_batches = np.floor(self.size/batch_size)
+        self.nr_batches = int(np.ceil(self.size/batch_size))
         self.batch_size = batch_size
-        logger.info('estimated size: ' + str(self.size))
+        logger.info('flow output size ' + str(self.size))
         
         logger.info('calculating source range according to start/end range of the desired output..')
         output_pos = 0
-        output_start_pos = np.floor(self.output_total_size*output_start_ratio)
+        output_start_pos = int(np.floor(self.output_total_size*output_start_ratio))
         output_end_pos = output_start_pos + self.size
-        logger.info('output range ' + str(output_start_pos) + '-' + str(output_end_pos))
         
         self.source_start_pos = None
         self.source_end_pos = None
@@ -159,16 +159,15 @@ class ClassBalancerGeneratorXY:
                 
             if(self.source_start_pos==None and output_pos>=output_start_pos):
                 self.source_start_pos = i
-                logger.info('start_pos ' + str(self.source_start_pos))
             
             if(self.source_start_pos!=None and self.source_end_pos==None and output_pos>=output_end_pos):
                 self.source_end_pos = i
-                logger.info('end_pos ' + str(self.source_end_pos))
         
         if(self.source_end_pos==None):
             self.source_end_pos = output_end_pos
         
-        logger.info('source range ' + str(self.source_start_pos) + '-' + str(self.source_end_pos))
+        logger.info('source range: ' + str(self.source_start_pos) + '-' + str(self.source_end_pos))
+        logger.info('output range: ' + str(output_start_pos) + '-' + str(output_end_pos))
 
         self.source_xy_generator.setup_flow(self.source_start_pos, self.source_end_pos)
 
@@ -178,13 +177,11 @@ class ClassBalancerGeneratorXY:
         if(np.sum(self.ratio_classes)==0):
             raise StopIteration('no item will be returned by this iterator. aborting')
 
-        x_batch = np.array([]).astype(output_dtype)
-        y_batch = np.array([]).astype(output_dtype)
+        x_batch = np.array([], dtype=output_dtype)
+        y_batch = np.array([], dtype=output_dtype)
 
         pending_augmentations = np.zeros(self.nr_classes, dtype='uint32')
 
-        logger.info('source range is ' + str(self.source_start_pos) + '-' + str(self.source_end_pos))
-        
         #process each source batch
         count_samples = 0
         for xs,ys in self.source_xy_generator.flow():
@@ -233,7 +230,7 @@ class ClassBalancerGeneratorXY:
                         y_batch = np.array([]).astype(output_dtype)
                     
                     pending_augmentations[label] = pending_augmentations[label] + (r-1)
-                    pending = int(round(pending_augmentations[label]))
+                    pending = int(int(pending_augmentations[label]))
 
                     #generate augmented copies of images so we balance classes
                     if(pending>0):
@@ -401,9 +398,9 @@ def print_progress(current_value, target_value, elapsed_seconds=None, status=Non
     s = s + '>'
     for i in range(pos, size):
         s = s + '.'
-    s = s + '] {:d}%'.format(round(perc*100))
+    s = s + '] {:d}%'.format(int(perc*100))
     if(elapsed_seconds!=None):
-        s = s + ' {:d}s'.format(round(elapsed_seconds))
+        s = s + ' {:d}s'.format(int(elapsed_seconds))
     if(status!=None):
         s = s + ' ' + str(status)
     print_same_line(s, use_logger=use_logger)
@@ -480,8 +477,8 @@ def dataset_xy_range(h5file, start_ratio, end_ratio):
     X = h5file['X']
     Y = h5file['Y']
     
-    s = round(X.shape[0]*start_ratio)
-    e = round(X.shape[0]*end_ratio)
+    s = int(X.shape[0]*start_ratio)
+    e = int(X.shape[0]*end_ratio)
 
     return X[s:e], Y[s:e]
 
@@ -490,8 +487,8 @@ def dataset_xy_hdf5matrix_keras(h5file_path, start_ratio, end_ratio):
     e = None
     with h5py.File(h5file_path, 'r') as h5file:
         Y = h5file['Y']
-        s = round(Y.shape[0]*start_ratio)
-        e = round(Y.shape[0]*end_ratio)
+        s = int(Y.shape[0]*start_ratio)
+        e = int(Y.shape[0]*end_ratio)
         
     X = HDF5Matrix(h5file_path, 'X', start=s, end=e)
     Y = HDF5Matrix(h5file_path, 'Y', start=s, end=e)
@@ -527,7 +524,7 @@ def show_image(pixels, output_file=None, size=6, is_bgr=False, cmap=None):
 def show_images(image_list, image_labels=None, group_by_label=True, cols=4, name='image', output_dir=None, is_bgr=False, cmap=None, size=6):
     logger.info('showing ' + str(len(image_list)) + ' images')
     fig = plt.figure()
-    rows = round(len(image_list)/cols)+1
+    rows = int(len(image_list)/cols)+1
     t = Timer('generating image patches. rows=' + str(rows) + '; cols=' + str(cols))
     fig.set_size_inches(cols*size, rows*size)
 
