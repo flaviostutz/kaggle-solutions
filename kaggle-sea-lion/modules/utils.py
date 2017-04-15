@@ -20,45 +20,47 @@ from sys import stdout
 from modules.logging import logger
 
 class BatchGeneratorXYH5:
-    """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit on memory"""
-    def __init__(self, h5file, start_ratio=0, end_ratio=1, batch_size=64, x_dataset='X', y_dataset='Y', loop=True):
+    """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit in memory"""
+
+    def __init__(self, h5file, x_dataset='X', y_dataset='Y', start_ratio=0, end_ratio=1, batch_size=64):
         if(start_ratio>end_ratio):
             raise Exception('End cannot be before start position')
         
         self.h5file = h5file
-        self.start_ratio = start_ratio
-        self.end_ratio = end_ratio
-        self.batch_size = batch_size
-        self.x_dataset = x_dataset
-        self.y_dataset = y_dataset
-        self.loop = loop
-        
-        ds = h5file[y_dataset]
-        ds_size = len(ds)
-        self.start_pos = round(start_ratio*ds_size)
-        self.end_pos = round(end_ratio*ds_size)
-        self.size = (self.end_pos-self.start_pos)
-        self.size = self.size - (self.size%batch_size)
-        self.nr_batches = np.floor(self.size/batch_size)
 
-    def flow(self, loop=None):
-        if(loop==None):
-            loop = self.loop
+        self.x_ds = self.h5file[x_dataset]
+        self.y_ds = self.h5file[y_dataset]
+        self.batch_size = batch_size
+
+        ds_size = len(self.y_ds)
+
+        start_pos = round(start_ratio*ds_size)
+        end_pos = round(end_ratio*ds_size)
+        self.setup_flow(start_pos, end_pos)
+        
+    def setup_flow(self, start_pos, end_pos):
+        self.start_pos = start_pos
+        self.end_pos = end_pos
+        self.size = end_pos-start_pos
+        self.size = self.size-(self.size%self.batch_size)
+        self.nr_batches = np.floor(self.size/self.batch_size)
+        
+    def flow(self, loop=True):
+
         counter = 0
-        x_ds = self.h5file[self.x_dataset]
-        y_ds = self.h5file[self.y_dataset]
         while True:
             if counter == self.nr_batches:
                 if(loop and self.nr_batches>0):
                     counter = 0
                 else:
                     return
-            batch_x = x_ds[self.start_pos + self.batch_size*counter:self.start_pos + self.batch_size*(counter+1)]
+
+            batch_x = self.x_ds[self.start_pos + self.batch_size*counter:self.start_pos + self.batch_size*(counter+1)]
             x_list = []
             y_list = []
 
             for i,x in enumerate(batch_x):
-                y = y_ds[i]
+                y = self.y_ds[i]
                 x_list.append(x)
                 y_list.append(y)
             
@@ -70,36 +72,27 @@ class BatchGeneratorXYH5:
     
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
-    def __init__(self, source_xy_generator, source_size, batch_size=64, max_augmentation_ratio=3, max_undersampling_ratio=1, classes_distribution_weight=1, start_ratio=0, end_ratio=1, enforce_max_ratios=False, image_augmentation=None, max_size=None, output_dtype='uint8'):
+    
+    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False):
         self.source_xy_generator = source_xy_generator
-        self.max_size = max_size
-        self.batch_size = batch_size
-        self.output_dtype = output_dtype
-        self.x_batch = np.array([]).astype(output_dtype)
-        self.y_batch = np.array([]).astype(output_dtype)
-        self.image_augmentation = image_augmentation
 
-        self.start_ratio = start_ratio
-        self.end_ratio = end_ratio
-        self.start_pos = round(start_ratio*source_size)
-        self.end_pos = round(end_ratio*source_size)
-        self.size = (self.end_pos-self.start_pos)
-        self.size = self.size - (self.size%batch_size)
-        self.nr_batches = np.floor(self.size/batch_size)
-        
-        logger.info('analysing input data class distribution')
-        _, self.Y_onehot = dump_xy_to_array(source_xy_generator, source_size)
-        self.count_classes = class_distribution(self.Y_onehot)
+        logger.info('loading input data for class distribution analysis...')
+
+        _, Y_onehot = dump_xy_to_array(source_xy_generator.flow(), source_xy_generator.size, x=False, y=True)
+        self.Y_labels = onehot_to_label(Y_onehot)
+        self.count_classes = class_distribution(Y_onehot)
         self.nr_classes = np.shape(self.count_classes)[0]
+        self.image_augmentation = image_augmentation
 
         smallest_class = None
         smallest_qtty = 999999999
         largest_class = None
         largest_qtty = 0
+        
         logger.info('raw sample class distribution')
         for i,c in enumerate(self.count_classes):
             logger.info(str(i) + ': ' + str(c))
-            if(c<smallest_qtty):
+            if(c>0 and c<smallest_qtty):
                 smallest_qtty = c
                 smallest_class = i
             if(c>largest_qtty):
@@ -110,7 +103,7 @@ class ClassBalancerGeneratorXY:
         maxq = smallest_qtty + smallest_qtty*max_augmentation_ratio
 
         qtty_per_class = max(minq, maxq)
-        logger.info('overall items per class: ' + str(qtty_per_class))
+        logger.info('overall output samples per class: ' + str(qtty_per_class))
 
         logger.info('augmentation/undersampling ratio per class')
         self.ratio_classes = np.zeros(len(self.count_classes))
@@ -125,45 +118,81 @@ class ClassBalancerGeneratorXY:
                 elif(self.ratio_classes[i]>1):
                     self.ratio_classes[i] = min(1+max_augmentation_ratio, self.ratio_classes[i])
 
-        self.ratio_classes = classes_distribution_weight * self.ratio_classes
+        self.ratio_classes = output_weight * self.ratio_classes
+        self.setup_flow(0,1)
+    
+    def setup_flow(self, output_start_ratio, output_end_ratio, batch_size=64):
+        logger.info('SETUP FLOW {} {}'.format(output_start_ratio, output_end_ratio))
+        logger.info('output distribution')
+        self.output_total_size = 0
+        total_samples_ratio = (output_end_ratio-output_start_ratio)
         for i,ratio in enumerate(self.ratio_classes):
-            logger.info(str(i) + ': ' + str(ratio))
-    
-    #x_ds, y_ds: h5py datasets
-    def _add_to_batch(self,x,y):
-        if(len(self.x_batch)==0):
-            self.x_batch.resize([0] + list(x.shape))
-        x_shape = np.array(self.x_batch.shape)
-        x_shape[0] = x_shape[0] + 1
-        x_shape = list(x_shape)
-        self.x_batch = np.resize(self.x_batch, x_shape)
-        self.x_batch[x_shape[0]-1] = x
+            class_total = np.floor(self.count_classes[i]*ratio)
+            logger.info(str(i) + ': ' + str(ratio) + ' (' + str(class_total*total_samples_ratio) + ')')
+            self.output_total_size += class_total
+        
+        self.size = self.output_total_size * total_samples_ratio
+        
+        self.size = int(self.size - (self.size%batch_size))
+        self.nr_batches = np.floor(self.size/batch_size)
+        self.batch_size = batch_size
+        logger.info('estimated size: ' + str(self.size))
+        
+        logger.info('calculating source range according to start/end range of the desired output..')
+        output_pos = 0
+        output_start_pos = np.floor(self.output_total_size*output_start_ratio)
+        output_end_pos = output_start_pos + self.size
+        logger.info('output range ' + str(output_start_pos) + '-' + str(output_end_pos))
+        
+        self.source_start_pos = None
+        self.source_end_pos = None
+        
+        for i,y_label in enumerate(self.Y_labels):
+            r = self.ratio_classes[y_label]
+            if(r==1): 
+                output_pos += 1
+            elif(r<1):
+                if(random.random()<=r):
+                    output_pos += 1
+            elif(r>1):
+                output_pos += r
+                
+            if(self.source_start_pos==None and output_pos>=output_start_pos):
+                self.source_start_pos = i
+                logger.info('start_pos ' + str(self.source_start_pos))
+            
+            if(self.source_start_pos!=None and self.source_end_pos==None and output_pos>=output_end_pos):
+                self.source_end_pos = i
+                logger.info('end_pos ' + str(self.source_end_pos))
+        
+        if(self.source_end_pos==None):
+            self.source_end_pos = output_end_pos
+        
+        logger.info('source range ' + str(self.source_start_pos) + '-' + str(self.source_end_pos))
 
-        if(len(self.y_batch)==0):
-            self.y_batch.resize([0] + list(y.shape))
-        y_shape = np.array(self.y_batch.shape)
-        y_shape[0] = y_shape[0] + 1
-        y_shape = list(y_shape)
-        self.y_batch = np.resize(self.y_batch, y_shape)
-        self.y_batch[y_shape[0]-1] = y
+        self.source_xy_generator.setup_flow(self.source_start_pos, self.source_end_pos)
 
     
-    def flow(self):
-        logger.info('generating next batch 1')
+    def flow(self, loop=False, max_samples=None, output_dtype='uint8'):
+        logger.info('starting new flow...')
         if(np.sum(self.ratio_classes)==0):
-            raise StopIteration('no item will be returned by this iterator')
+            raise StopIteration('no item will be returned by this iterator. aborting')
 
-        y_labels = onehot_to_label(self.Y_onehot)
+        x_batch = np.array([]).astype(output_dtype)
+        y_batch = np.array([]).astype(output_dtype)
+
         pending_augmentations = np.zeros(self.nr_classes, dtype='uint32')
 
-        count_samples = 0
+        logger.info('source range is ' + str(self.source_start_pos) + '-' + str(self.source_end_pos))
         
-        #process each batch
-        for xs,ys in self.source_xy_generator:
+        #process each source batch
+        count_samples = 0
+        for xs,ys in self.source_xy_generator.flow():
+            y_labels = onehot_to_label(ys)
             for i,x in enumerate(xs):
                 y = ys[i]
             
-                if(self.max_size!=None and count_samples>=self.max_size):
+                if(max_samples!=None and count_samples>=max_samples):
                     break
 
                 label = y_labels[i]
@@ -171,37 +200,37 @@ class ClassBalancerGeneratorXY:
 
                 #add sample
                 if(r==1):
-                    self._add_to_batch(x,y)
+                    x_batch,y_batch = self._add_to_batch(x_batch,y_batch,x,y)
 #                    logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
-                    if(len(self.y_batch)>=self.batch_size):
-                        logger.info('yielding batch1')
-                        yield self.x_batch,self.y_batch
-                        self.x_batch = np.array([]).astype(self.output_dtype)
-                        self.y_batch = np.array([]).astype(self.output_dtype)
+                    if(len(y_batch)>=self.batch_size):
+#                        logger.info('yielding batch1')
+                        yield x_batch,y_batch
+                        x_batch = np.array([]).astype(output_dtype)
+                        y_batch = np.array([]).astype(output_dtype)
 
                 #undersample
-                if(r<1):
+                elif(r<1):
                     #accept sample at the rate it should so we balance classes
                     rdm = random.random()
                     if(rdm<=r):
-                        self._add_to_batch(x,y)                        
+                        x_batch,y_batch = self._add_to_batch(x_batch,y_batch,x,y)
 #                        logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
-                        if(len(self.y_batch)>=self.batch_size):
-                            logger.info('yielding batch2')
-                            yield self.x_batch,self.y_batch
-                            self.x_batch = np.array([]).astype(self.output_dtype)
-                            self.y_batch = np.array([]).astype(self.output_dtype)
+                        if(len(y_batch)>=self.batch_size):
+#                            logger.info('yielding batch2')
+                            yield x_batch,y_batch
+                            x_batch = np.array([]).astype(output_dtype)
+                            y_batch = np.array([]).astype(output_dtype)
 
                 #augmentation
                 elif(r>1):
                     #accept sample
-                    self._add_to_batch(x,y)                        
+                    x_batch,y_batch = self._add_to_batch(x_batch,y_batch,x,y)
 #                    logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
-                    if(len(self.y_batch)>=self.batch_size):
-                        logger.info('yielding batch3')
-                        yield self.x_batch,self.y_batch
-                        self.x_batch = np.array([]).astype(self.output_dtype)
-                        self.y_batch = np.array([]).astype(self.output_dtype)
+                    if(len(y_batch)>=self.batch_size):
+#                        logger.info('yielding batch3')
+                        yield x_batch,y_batch
+                        x_batch = np.array([]).astype(output_dtype)
+                        y_batch = np.array([]).astype(output_dtype)
                     
                     pending_augmentations[label] = pending_augmentations[label] + (r-1)
                     pending = int(round(pending_augmentations[label]))
@@ -220,17 +249,38 @@ class ClassBalancerGeneratorXY:
                             y_it = it[1]
                             x_it = cv2.cvtColor(x_it, cv2.COLOR_RGB2BGR)
                             
-                            self._add_to_batch(x,y)                        
+                            x_batch,y_batch = self._add_to_batch(x_batch,y_batch,x,y)
 #                            logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
-                            if(len(self.y_batch)>=self.batch_size):
+                            if(len(y_batch)>=self.batch_size):
                                 logger.info('yielding batch4')
-                                yield self.x_batch,self.y_batch
-                                self.x_batch = np.array([]).astype(self.output_dtype)
-                                self.y_batch = np.array([]).astype(self.output_dtype)
+                                yield x_batch,y_batch
+                                x_batch = np.array([]).astype(self.output_dtype)
+                                y_batch = np.array([]).astype(self.output_dtype)
                                 
                             pending_augmentations[label] = pending_augmentations[label] - pending
 
-    
+    #x_ds, y_ds: h5py datasets
+    def _add_to_batch(self,x_batch,y_batch,x,y):
+        if(len(x_batch)==0):
+            x_batch = np.resize(x_batch, [0] + list(x.shape))
+        x_shape = np.array(x_batch.shape)
+        x_shape[0] = x_shape[0] + 1
+        x_shape = list(x_shape)
+        x_batch = np.resize(x_batch, x_shape)
+        x_batch[x_shape[0]-1] = x
+
+        if(len(y_batch)==0):
+            y_batch = np.resize(y_batch,[0] + list(y.shape))
+        y_shape = np.array(y_batch.shape)
+        y_shape[0] = y_shape[0] + 1
+        y_shape = list(y_shape)
+        y_batch = np.resize(y_batch, y_shape)
+        y_batch[y_shape[0]-1] = y
+        
+        return x_batch, y_batch
+
+
+                            
 def dump_xy_to_dataset(xy_generator, output_h5file, x_dtype='u1', y_dtype='u1', qtty=None):
     """ print('dump train data')
 with h5py.File(OUTPUT_DIR + '/test.h5', 'w') as outh5:
@@ -247,10 +297,10 @@ with h5py.File(OUTPUT_DIR + '/test.h5', 'w') as outh5:
             if(len(y_ds)>=qtty):
                 return
 
-def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True):
+def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8'):
     """Dump generator contents into a numpy array. Use x and y parameters to avoid dumping too much data from x (or sometimes y)"""
-    Xds = np.array([])
-    Yds = np.array([])
+    Xds = np.array([], dtype=dtype)
+    Yds = np.array([], dtype=dtype)
     count = 0
     t = Timer('generator dump')
     for x_data,y_data in xy_generator:
