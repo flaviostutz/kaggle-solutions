@@ -44,6 +44,18 @@ class LoggingLogger(keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         pass
 
+def show_predictions(xy_generator, qtty, model, is_bgr=True, group_by_label=False, size=1.4):
+    x, y = utils.dump_xy_to_array(xy_generator, qtty, x=True, y=True)
+    y_pred = model.predict(x)
+
+    yl = utils.onehot_to_label(np.array(y))
+    ylp = utils.onehot_to_label(np.array(y_pred))
+
+    labels = [(lambda a,b: str(a) + '/' + str(b))(y,yp) for y,yp in zip(yl,ylp)]
+
+    utils.show_images(x, image_labels=labels, cols=12, is_bgr=is_bgr, group_by_label=group_by_label, size=size)
+    
+    
 def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_labels=None):
     acc = model.evaluate(X, Y, batch_size=batch_size)
     logger.info('Loss: ' + str(acc))

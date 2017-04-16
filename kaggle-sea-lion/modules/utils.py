@@ -7,6 +7,7 @@ import os
 from time import time
 import h5py
 import random
+import hashlib
 import itertools
 from sklearn import preprocessing
 from scipy import spatial
@@ -172,7 +173,7 @@ class ClassBalancerGeneratorXY:
         self.source_xy_generator.setup_flow(self.source_start_pos, self.source_end_pos)
 
     
-    def flow(self, loop=False, max_samples=None, output_dtype='uint8'):
+    def flow(self, max_samples=None, output_dtype='uint8'):
         logger.info('starting new flow...')
         if(np.sum(self.ratio_classes)==0):
             raise StopIteration('no item will be returned by this iterator. aborting')
@@ -348,9 +349,6 @@ def add_sample_to_dataset(x_ds, y_ds, x_data, y_data):
     x_ds.resize(x_shape)
     x_ds[x_shape[0]-1] = x_data
 
-    #show_image(x_data, is_bgr=True)
-    #show_image((x_ds[x_shape[0]-1]).astype('uint8'), is_bgr=True)
-
     y_shape = np.array(y_ds.shape)
     y_shape[0] = y_shape[0] + 1
     y_shape = list(y_shape)
@@ -465,7 +463,7 @@ def plot_confusion_matrix(cm, class_labels=None,
 
     thresh = cm.max() / 2.
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, cm[i, j],
+        plt.text(j, i, '{:.2f}'.format(cm[i, j]),
                  horizontalalignment="center",
                  color="white" if cm[i, j] > thresh else "black")
 
@@ -521,7 +519,7 @@ def show_image(pixels, output_file=None, size=6, is_bgr=False, cmap=None):
     else:
         plt.show()
 
-def show_images(image_list, image_labels=None, group_by_label=True, cols=4, name='image', output_dir=None, is_bgr=False, cmap=None, size=6):
+def show_images(image_list, image_labels=None, group_by_label=False, cols=4, name='image', output_dir=None, is_bgr=False, cmap=None, size=6):
     logger.info('showing ' + str(len(image_list)) + ' images')
     fig = plt.figure()
     rows = int(len(image_list)/cols)+1
@@ -552,7 +550,8 @@ def show_images(image_list, image_labels=None, group_by_label=True, cols=4, name
         y.imshow(im, cmap=cmap)
         
         if(image_labels!=None):
-            np.random.seed(image_labels[i])
+            seed = int(int(hashlib.md5(str(image_labels[i]).encode('utf-8')).hexdigest(),16)/999999999999999999999999999999)
+            np.random.seed(seed)
             color = np.random.rand(3,1)
             y.text(4, 17, str(image_labels[i]), fontsize=16, style='normal', bbox={'facecolor':color, 'alpha':1, 'pad':4})
             y.text(4, np.shape(im)[1]-7, '[' + str(i) + ']', fontsize=12, style='normal')
