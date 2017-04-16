@@ -56,6 +56,56 @@ def show_predictions(xy_generator, qtty, model, is_bgr=True, group_by_label=Fals
     utils.show_images(x, image_labels=labels, cols=12, is_bgr=is_bgr, group_by_label=group_by_label, size=size)
     
     
+class YAcumGenerator:
+    
+    def __init__(self):
+        self.y_ds = None
+        
+    def generator(self,xy_generator):
+        for xs,ys in xy_generator:
+            if(self.y_ds==None):
+                self.y_ds = ys
+            else:
+                self.y_ds = np.concatenate((self.y_ds, ys))
+            
+            yield xs,ys
+
+def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed=True, class_labels=None):
+    logger.info('Evaluating model performance (' + str(nr_samples) + ' samples)...')
+    acc = model.evaluate_generator(xy_generator, nr_batches)
+    logger.info('Accuracy: ' + str(acc[1]) + ' - Loss: ' + str(acc[0]))
+
+    if(detailed):
+        logger.info('Predicting Y for detailed analysis...')
+        acum = YAcumGenerator()
+        
+        Y_pred = model.predict_generator(acum.generator(xy_generator), nr_batches+1)
+        #sometimes predict_generator returns more samples than nr_batches*batch_size
+        Y_pred = np.array(np.split(Y_pred, [nr_samples]))[0]
+        
+        #we only need the highest probability guess
+        Y_pred = np.argmax(Y_pred, axis=1)
+
+        #convert from categorical to label
+        Y = acum.y_ds
+        Y = np.array(np.split(Y, [nr_samples]))[0]
+        if(len(Y)>0):
+            lb = preprocessing.LabelBinarizer()
+            lb.fit(np.array(range(np.shape(Y[0])[0])))
+            Y = lb.inverse_transform(Y)
+
+            logger.info('Kappa score: ' + str(metrics.cohen_kappa_score(Y, Y_pred)) + ' (-1 bad; 0 just luck; 1 good)')
+            logger.info('Nr test samples: ' + str(len(Y)) )
+
+            cm = metrics.confusion_matrix(Y, Y_pred, class_labels)
+            logger.info('Confusion matrix:')
+            logger.info(cm)
+        
+            utils.plot_confusion_matrix(cm, normalize=True, class_labels=class_labels)
+        else:
+            logger.info('No samples found in xy_generator')
+    
+    
 def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_labels=None):
     acc = model.evaluate(X, Y, batch_size=batch_size)
     logger.info('Loss: ' + str(acc))

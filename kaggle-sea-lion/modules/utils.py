@@ -463,7 +463,10 @@ def plot_confusion_matrix(cm, class_labels=None,
 
     thresh = cm.max() / 2.
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, '{:.2f}'.format(cm[i, j]),
+        tx = str(int(cm[i, j])
+        if(normalize):
+            tx = str(int(cm[i, j]*100)) + '%'
+        plt.text(j, i, tx,
                  horizontalalignment="center",
                  color="white" if cm[i, j] > thresh else "black")
 
