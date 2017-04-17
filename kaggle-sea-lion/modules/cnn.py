@@ -94,14 +94,29 @@ def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed
             lb.fit(np.array(range(np.shape(Y[0])[0])))
             Y = lb.inverse_transform(Y)
 
-            logger.info('Kappa score: ' + str(metrics.cohen_kappa_score(Y, Y_pred)) + ' (-1 bad; 0 just luck; 1 good)')
-            logger.info('Nr test samples: ' + str(len(Y)) )
+            unique_labels = np.unique(Y)
+            
+            cm = metrics.confusion_matrix(Y, Y_pred, unique_labels)
+            
+            if(class_labels==None):
+                class_labels = unique_labels
+            class_labels = [str(s) for s in class_labels]
+            
+            logger.info('Number of test samples: ' + str(len(Y)) )
+            logger.info('Kappa score: ' + str(metrics.cohen_kappa_score(Y, Y_pred)) + ' (-1 bad; 0 just luck; 1 great)')
 
-            cm = metrics.confusion_matrix(Y, Y_pred, class_labels)
+            logger.info('\n' + metrics.classification_report(Y, Y_pred, target_names=class_labels))
+            
+            
+            logger.info('Accuracy per class:')            
+            acc_class = cm.diagonal()/np.sum(cm, axis=0)
+            for i,acc in enumerate(acc_class):
+                logger.info(str('{}: {:.1f}%'.format(class_labels[i], acc_class[i]*100)))
+            
             logger.info('Confusion matrix:')
-            logger.info(cm)
-        
-            utils.plot_confusion_matrix(cm, normalize=True, class_labels=class_labels)
+            logger.info('\n' + str(cm))
+            utils.plot_confusion_matrix(cm, class_labels=class_labels)
+            
         else:
             logger.info('No samples found in xy_generator')
     
@@ -129,43 +144,8 @@ def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_la
         cm = metrics.confusion_matrix(Y, Y_pred)
         logger.info('Confusion matrix:')
         logger.info(cm)
-        
-        utils.plot_confusion_matrix(cm, normalize=False)
-
-        
-def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed=True, class_labels=None):
-    logger.info('Evaluating model performance (' + str(nr_samples) + ' samples)...')
-    acc = model.evaluate_generator(xy_generator, nr_batches)
-    logger.info('Accuracy: ' + str(acc[1]) + ' - Loss: ' + str(acc[0]))
-
-    if(detailed):
-        logger.info('Predicting Y for detailed analysis...')
-        Y_pred = model.predict_generator(xy_generator, nr_batches+1)
-        #sometimes predict_generator returns more samples than nr_batches*batch_size
-        Y_p = np.array(np.split(Y_pred, [nr_samples]))[0]
-
-        #we only need the highest probability guess
-        Y_pred = np.swapaxes(Y_pred, 0, 1)
-        Y_pred = np.argmax(Y_p, axis=1)
-
-        #convert from categorical to label
-        _, Y = utils.dump_xy_to_array(xy_generator, nr_samples)
-        if(len(Y)>0):
-            lb = preprocessing.LabelBinarizer()
-            lb.fit(np.array(range(np.shape(Y[0])[0])))
-            Y = lb.inverse_transform(Y)
-
-            logger.info('Nr test samples: ' + str(len(Y)) + '|' + str(len(Y_pred)))
-
-            logger.info('Kappa score (was this luck?): ' + str(metrics.cohen_kappa_score(Y, Y_pred)))
-
-            cm = metrics.confusion_matrix(Y, Y_pred)
-            logger.info('Confusion matrix:')
-            logger.info(cm)
-        
-            utils.plot_confusion_matrix(cm, normalize=False)
-        else:
-            logger.info('No samples found in xy_generator')
+                
+        utils.plot_confusion_matrix(cm)
 
 
 def get_callbacks_keras(model, weights_dir, tf_logs_dir):

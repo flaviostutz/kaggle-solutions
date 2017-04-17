@@ -75,12 +75,33 @@ class BatchGeneratorXYH5:
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
     
-    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False):
+    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, tmp_file=None):
         self.source_xy_generator = source_xy_generator
+        self.Y_labels = None
 
         logger.info('loading input data for class distribution analysis...')
 
-        _, Y_onehot = dump_xy_to_array(source_xy_generator.flow(), source_xy_generator.size, x=False, y=True)
+        Y_onehot = None
+        
+        if(tmp_file!=None):
+            #tmp_file = os.path.abspath(tmp_file)
+            if(not tmp_file.endswith('.npy')):
+               tmp_file = tmp_file + '.npy'
+            if(os.path.exists(tmp_file)):
+                logger.info('loading Y from temporary file ' + tmp_file)
+                try:
+                    Y_onehot = np.load(tmp_file)
+                except:
+                    logger.warn('error loading temp file. ignoring. e=' + str(sys.exc_info()[0]))
+                    pass
+
+        if(Y_onehot==None):
+            logger.info('loading Y from raw dataset')
+            _, Y_onehot = dump_xy_to_array(source_xy_generator.flow(), source_xy_generator.size, x=False, y=True)
+            if(tmp_file!=None):
+                logger.info('saving Y to temp file ' + tmp_file)
+                np.save(tmp_file, Y_onehot)
+            
         self.Y_labels = onehot_to_label(Y_onehot)
         self.count_classes = class_distribution(Y_onehot)
         self.nr_classes = np.shape(self.count_classes)[0]
@@ -124,6 +145,8 @@ class ClassBalancerGeneratorXY:
         self.setup_flow(0,1)
     
     def setup_flow(self, output_start_ratio, output_end_ratio, batch_size=64):
+        if(output_start_ratio>output_end_ratio):
+            raise Exception('output_start_ratio: start must be before end!')
         logger.info('SETUP FLOW {} {}'.format(output_start_ratio, output_end_ratio))
         logger.info('output distribution')
         self.output_total_size = 0
@@ -441,13 +464,20 @@ def class_distribution(Y_onehot):
 
 
 def plot_confusion_matrix(cm, class_labels=None,
-                          normalize=False,
                           title='Confusion matrix',
                           cmap=plt.cm.Blues):
     """
     This function prints and plots the confusion matrix.
-    Normalization can be applied by setting `normalize=True`.
     """
+
+    fig = plt.figure()
+    fig.set_size_inches(8, 3)
+    samples = int(cm.sum())
+
+    
+    #NON NORMALIZED CONFUSION MATRIX
+    plt.subplot(122)
+        
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
     plt.colorbar()
@@ -457,23 +487,50 @@ def plot_confusion_matrix(cm, class_labels=None,
     plt.xticks(tick_marks, class_labels, rotation=45)
     plt.yticks(tick_marks, class_labels)
 
-    if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        cm = np.nan_to_num(cm)
-
     thresh = cm.max() / 2.
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        tx = str(int(cm[i, j])
-        if(normalize):
-            tx = str(int(cm[i, j]*100)) + '%'
+        tx = str(cm[i, j])
         plt.text(j, i, tx,
                  horizontalalignment="center",
                  color="white" if cm[i, j] > thresh else "black")
 
     plt.tight_layout()
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
+    plt.ylabel('True label ({})'.format(samples))
+    plt.xlabel('Predicted label ({})'.format(samples))
 
+    
+    #NORMALIZED CONFUSION MATRIX
+    plt.subplot(121)
+    
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    if(class_labels==None):
+        class_labels = ["{:d}".format(x) for x in range(len(cm))]
+    tick_marks = np.arange(len(class_labels))
+    plt.xticks(tick_marks, class_labels, rotation=45)
+    plt.yticks(tick_marks, class_labels)
+
+    #normalize
+    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm = np.nan_to_num(cm)
+
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        #normalize
+        tx = str(int(cm[i, j]*100)) + '%'
+        plt.text(j, i, tx,
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label ({})'.format(samples))
+    plt.xlabel('Predicted label ({})'.format(samples))
+
+    
+    plt.show()
+    
+    
 def dataset_xy_range(h5file, start_ratio, end_ratio):
     X = h5file['X']
     Y = h5file['Y']
