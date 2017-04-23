@@ -92,6 +92,30 @@ def convnet_alexnet2_lion_keras(image_dims):
 
     return models.Model([input], [fc_2])
 
+
+def convnet_medium_lion_keras(image_dims):
+    model = keras.models.Sequential()
+
+    model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
+
+    model.add(convolutional.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+
+    model.add(core.Flatten())
+
+    model.add(core.Dense(1024, activation='relu'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(2048, activation='relu'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(6, activation='softmax'))
+    
+    return model
+
+
 #don't change. there are already good train for this net (72% acc)
 def convnet_simple_lion_keras(image_dims):
     model = keras.models.Sequential()

@@ -75,7 +75,7 @@ class BatchGeneratorXYH5:
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
     
-    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, tmp_dir=None, use_tmp=True):
+    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, tmp_file=None):
         self.source_xy_generator = source_xy_generator
         self.Y_labels = None
 
@@ -83,12 +83,11 @@ class ClassBalancerGeneratorXY:
 
         Y_onehot = None
         
-        if(tmp_dir!=None):
+        if(tmp_file!=None):
             
-            tmp_file = tmp_dir + 'class-balancer-{}-{}-{}-{}-{}-{}.npy'.format(max_augmentation_ratio,max_undersampling_ratio,output_weight,enforce_max_ratios,start_ratio,end_ratio)
             if(not tmp_file.endswith('.npy')):
                tmp_file = tmp_file + '.npy'
-            if(use_tmp and os.path.exists(tmp_file)):
+            if(os.path.exists(tmp_file)):
                 logger.info('loading Y from temporary file ' + tmp_file)
                 try:
                     Y_onehot = np.load(tmp_file)
@@ -149,28 +148,27 @@ class ClassBalancerGeneratorXY:
         if(output_start_ratio>output_end_ratio):
             raise Exception('output_start_ratio: start must be before end!')
         logger.info('SETUP FLOW {} {}'.format(output_start_ratio, output_end_ratio))
-        logger.info('output distribution')
-        self.output_total_size = 0
-        total_samples_ratio = (output_end_ratio-output_start_ratio)
+
+        output_total_size = 0
         for i,ratio in enumerate(self.ratio_classes):
             class_total = np.floor(self.count_classes[i]*ratio)
-            logger.info(str(i) + ': ' + str(ratio) + ' (' + str(class_total*total_samples_ratio) + ')')
-            self.output_total_size += class_total
-
-        logger.info('output total size ' + str(self.output_total_size))
-        self.size = int(self.output_total_size * total_samples_ratio)
-        
-        self.nr_batches = int(np.ceil(self.size/batch_size))
-        self.batch_size = batch_size
-        logger.info('flow output size ' + str(self.size))
+            output_total_size += class_total
         
         logger.info('calculating source range according to start/end range of the desired output..')
         output_pos = 0
-        output_start_pos = int(np.floor(self.output_total_size*output_start_ratio))
-        output_end_pos = output_start_pos + self.size
+        output_start_pos = int(np.ceil(output_total_size*output_start_ratio))
+        output_end_pos = int(np.floor(output_total_size*output_end_ratio))
+        self.size = output_end_pos - output_start_pos
+        self.nr_batches = int(np.ceil(self.size/batch_size))
+        self.batch_size = batch_size
+
+        logger.info('output distribution for this flow')
+        for i,ratio in enumerate(self.ratio_classes):
+            class_total = np.floor(self.count_classes[i]*ratio)
+            logger.info(str(i) + ': ' + str(ratio) + ' (' + str(int(class_total*(output_end_ratio-output_start_ratio))) + ')')
         
-        self.source_start_pos = None
-        self.source_end_pos = None
+        source_start_pos = None
+        source_end_pos = None
         
         for i,y_label in enumerate(self.Y_labels):
             r = self.ratio_classes[y_label]
@@ -182,19 +180,16 @@ class ClassBalancerGeneratorXY:
             elif(r>1):
                 output_pos += r
                 
-            if(self.source_start_pos==None and output_pos>=output_start_pos):
-                self.source_start_pos = i
+            if(source_start_pos==None and output_pos>=output_start_pos):
+                source_start_pos = i
             
-            if(self.source_start_pos!=None and self.source_end_pos==None and output_pos>=output_end_pos):
-                self.source_end_pos = i
+            if(source_start_pos!=None and output_pos<=output_end_pos):
+                source_end_pos = i
         
-        if(self.source_end_pos==None):
-            self.source_end_pos = output_end_pos
-        
-        logger.info('source range: ' + str(self.source_start_pos) + '-' + str(self.source_end_pos))
-        logger.info('output range: ' + str(output_start_pos) + '-' + str(output_end_pos))
+        logger.info('source range: ' + str(source_start_pos) + '-' + str(source_end_pos) + ' (' + str(source_end_pos-source_start_pos) + ')')
+        logger.info('output range: ' + str(output_start_pos) + '-' + str(output_end_pos) + ' (' + str(output_end_pos-output_start_pos) + ')')
 
-        self.source_xy_generator.setup_flow(self.source_start_pos, self.source_end_pos)
+        self.source_xy_generator.setup_flow(source_start_pos, source_end_pos)
     
     def flow(self, max_samples=None, output_dtype='uint8'):
         logger.info('starting new flow...')
@@ -256,14 +251,14 @@ class ClassBalancerGeneratorXY:
                     pending_augmentations[label] += (r-1)
 
                     #generate augmented copies of images so we balance classes
-                    if(np.floor(pending_augmentations[label])>0):
+                    if(pending_augmentations[label]>1):
                         x1 = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
                         x_orig = np.array([x1])
                         y_orig = np.array([y])
 
 #                        show_image(x_orig[0], is_bgr=False)
                         ir = self.image_augmentation.flow(x_orig, y_orig, batch_size=1)
-                        while(np.floor(pending_augmentations[label])>0):
+                        while(pending_augmentations[label]>1):
                             it = ir.next()
                             x_it = it[0][0]
                             y_it = it[1][0]
