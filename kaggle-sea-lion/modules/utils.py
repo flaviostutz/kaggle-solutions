@@ -165,7 +165,7 @@ class ClassBalancerGeneratorXY:
         logger.info('output distribution for this flow')
         for i,ratio in enumerate(self.ratio_classes):
             class_total = np.floor(self.count_classes[i]*ratio)
-            logger.info(str(i) + ': ' + str(ratio) + ' (' + str(int(class_total*(output_end_ratio-output_start_ratio))) + ')')
+            logger.info('{}: {} ({:.2f})'.format(i, int(class_total*(output_end_ratio-output_start_ratio)), ratio))
         
         source_start_pos = None
         source_end_pos = None

@@ -98,20 +98,20 @@ def convnet_medium_lion_keras(image_dims):
 
     model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
 
-    model.add(convolutional.Conv2D(32, (3, 3), activation='relu', padding='same'))
+    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
     model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
-    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same'))
+    model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
     model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
-    model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same'))
+    model.add(convolutional.Conv2D(256, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
     model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
 
     model.add(core.Flatten())
 
-    model.add(core.Dense(1024, activation='relu'))
+    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
-    model.add(core.Dense(2048, activation='relu'))
+    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
-    model.add(core.Dense(6, activation='softmax'))
+    model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
     
     return model
 

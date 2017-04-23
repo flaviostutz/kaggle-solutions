@@ -31,17 +31,11 @@ class LoggingLogger(keras.callbacks.Callback):
         self.epoch = epoch
         self.target = self.params['steps']
 
-    def on_batch_begin(self, batch, logs={}):
-        logger.debug('batch ' + str(batch) + '/' + str(self.target) + ' - epoch ' + str(self.epoch) + '/' + str(self.epochs))
-        for k in self.params['metrics']:
-            if k in logs:
-                logger.debug(str(k) + '=' + str(logs[k]))
-
     def on_batch_end(self, batch, logs={}):
-        pass
+        logger.debug('batch ' + str(batch) + '/' + str(self.target) + ' - epoch ' + str(self.epoch) + '/' + str(self.epochs) + ' - ' + str(logs))
                 
     def on_epoch_end(self, epoch, logs={}):
-        pass
+        logger.debug('epoch end ' + str(epoch) + '/' + str(self.epochs) + ' - ' + str(logs))
 
 def show_predictions(xy_generator, qtty, model, is_bgr=True, group_by_label=False, size=1.4):
     x, y = utils.dump_xy_to_array(xy_generator, qtty, x=True, y=True)
