@@ -23,25 +23,24 @@ class LoggingLogger(keras.callbacks.Callback):
         super(LoggingLogger,self).__init__()
         self.epoch = 0
 
-    def on_train_begin(self, logs=None):
+    def on_train_begin(self, logs={}):
         self.verbose = self.params['verbose']
         self.epochs = self.params['epochs']
 
-    def on_epoch_begin(self, epoch, logs=None):
+    def on_epoch_begin(self, epoch, logs={}):
         self.epoch = epoch
         self.target = self.params['steps']
 
-    def on_batch_begin(self, batch, logs=None):
-        logger.debug('batch ' + str(batch) + '/' + str(self.target))
-        logger.debug('epoch ' + str(self.epoch) + '/' + str(self.epochs))
+    def on_batch_begin(self, batch, logs={}):
+        logger.debug('batch ' + str(batch) + '/' + str(self.target) + ' - epoch ' + str(self.epoch) + '/' + str(self.epochs))
         for k in self.params['metrics']:
             if k in logs:
                 logger.debug(str(k) + '=' + str(logs[k]))
 
-    def on_batch_end(self, batch, logs=None):
+    def on_batch_end(self, batch, logs={}):
         pass
                 
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_end(self, epoch, logs={}):
         pass
 
 def show_predictions(xy_generator, qtty, model, is_bgr=True, group_by_label=False, size=1.4):
@@ -85,37 +84,35 @@ def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed
         
         #we only need the highest probability guess
         Y_pred = np.argmax(Y_pred, axis=1)
+        
 
-        #convert from categorical to label
         Y = acum.y_ds
         Y = np.array(np.split(Y, [nr_samples]))[0]
         if(len(Y)>0):
+            #convert from categorical to label
             lb = preprocessing.LabelBinarizer()
             lb.fit(np.array(range(np.shape(Y[0])[0])))
             Y = lb.inverse_transform(Y)
 
-            unique_labels = np.unique(Y)
-            
-            cm = metrics.confusion_matrix(Y, Y_pred, unique_labels)
-            
             if(class_labels==None):
-                class_labels = unique_labels
-            class_labels = [str(s) for s in class_labels]
-            
+                unique_labels = np.unique(Y)
+                class_labels = [str(s) for s in unique_labels]
+
+            cm = metrics.confusion_matrix(Y, Y_pred, range(len(class_labels)))
+
             logger.info('Number of test samples: ' + str(len(Y)) )
             logger.info('Kappa score: ' + str(metrics.cohen_kappa_score(Y, Y_pred)) + ' (-1 bad; 0 just luck; 1 great)')
 
-            logger.info('\n' + metrics.classification_report(Y, Y_pred, target_names=class_labels))
+            logger.info('\n' + metrics.classification_report(Y, Y_pred, target_names=class_labels, labels=range(len(class_labels))))
             
-            
-            logger.info('Accuracy per class:')            
             acc_class = cm.diagonal()/np.sum(cm, axis=0)
+            logger.info('Accuracy per class:')
             for i,acc in enumerate(acc_class):
                 logger.info(str('{}: {:.1f}%'.format(class_labels[i], acc_class[i]*100)))
             
             logger.info('Confusion matrix:')
             logger.info('\n' + str(cm))
-            utils.plot_confusion_matrix(cm, class_labels=class_labels)
+            utils.plot_confusion_matrix(cm, class_labels=class_labels, size=2)
             
         else:
             logger.info('No samples found in xy_generator')
@@ -139,7 +136,7 @@ def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_la
 
         logger.info('Nr test samples: ' + str(len(X)))
         
-        logger.info('Kappa score (was this luck?): ' + str(metrics.cohen_kappa_score(Y, Y_pred)))
+        logger.info('\nKappa score (was this luck?): ' + str(metrics.cohen_kappa_score(Y, Y_pred)) + '\n')
         
         cm = metrics.confusion_matrix(Y, Y_pred)
         logger.info('Confusion matrix:')
@@ -150,13 +147,13 @@ def evaluate_dataset_tflearn(X, Y, model, batch_size=24, detailed=True, class_la
 
 def get_callbacks_keras(model, weights_dir, tf_logs_dir):
     weights_file = weights_dir + 'weights-{epoch:02d}-{val_acc:.2f}.h5'
-    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tf_logs_dir, histogram_freq=0, write_graph=True, write_images=True)
+    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=tf_logs_dir, histogram_freq=1, write_graph=True, write_images=True)
     tensorboard_callback.set_model(model)
     checkpoint_callback = keras.callbacks.ModelCheckpoint(weights_file, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
     progbar_callback = keras.callbacks.ProgbarLogger(count_mode='steps')
     logger_callback = LoggingLogger()
-    
-        
+    return [tensorboard_callback,checkpoint_callback,progbar_callback,logger_callback]
+
         
 def prepare_model_dirs_tflearn(output_dir):
     dir_tflogs = output_dir + 'tf-logs'

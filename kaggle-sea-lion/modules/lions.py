@@ -14,6 +14,8 @@ from keras import layers
 from keras.layers import convolutional
 from keras.layers import core
 
+CLASS_LABELS = ['0-adult_male', '1-subadult_male', '2-adult_female', '3-juvenile', '4-pup', '5-non lion']
+
 #colors in bgr reference
 ADULT_MALES = 0
 SUBADULT_MALE = 1
@@ -90,7 +92,7 @@ def convnet_alexnet2_lion_keras(image_dims):
 
     return models.Model([input], [fc_2])
 
-
+#don't change. there are already good train for this net (72% acc)
 def convnet_simple_lion_keras(image_dims):
     model = keras.models.Sequential()
 

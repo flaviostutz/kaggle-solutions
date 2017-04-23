@@ -75,7 +75,7 @@ class BatchGeneratorXYH5:
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
     
-    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, tmp_file=None):
+    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, tmp_dir=None, use_tmp=True):
         self.source_xy_generator = source_xy_generator
         self.Y_labels = None
 
@@ -83,11 +83,12 @@ class ClassBalancerGeneratorXY:
 
         Y_onehot = None
         
-        if(tmp_file!=None):
-            #tmp_file = os.path.abspath(tmp_file)
+        if(tmp_dir!=None):
+            
+            tmp_file = tmp_dir + 'class-balancer-{}-{}-{}-{}-{}-{}.npy'.format(max_augmentation_ratio,max_undersampling_ratio,output_weight,enforce_max_ratios,start_ratio,end_ratio)
             if(not tmp_file.endswith('.npy')):
                tmp_file = tmp_file + '.npy'
-            if(os.path.exists(tmp_file)):
+            if(use_tmp and os.path.exists(tmp_file)):
                 logger.info('loading Y from temporary file ' + tmp_file)
                 try:
                     Y_onehot = np.load(tmp_file)
@@ -142,7 +143,7 @@ class ClassBalancerGeneratorXY:
                     self.ratio_classes[i] = min(1+max_augmentation_ratio, self.ratio_classes[i])
 
         self.ratio_classes = output_weight * self.ratio_classes
-        self.setup_flow(0,1)
+        self.setup_flow(start_ratio,end_ratio)
     
     def setup_flow(self, output_start_ratio, output_end_ratio, batch_size=64):
         if(output_start_ratio>output_end_ratio):
@@ -194,7 +195,6 @@ class ClassBalancerGeneratorXY:
         logger.info('output range: ' + str(output_start_pos) + '-' + str(output_end_pos))
 
         self.source_xy_generator.setup_flow(self.source_start_pos, self.source_end_pos)
-
     
     def flow(self, max_samples=None, output_dtype='uint8'):
         logger.info('starting new flow...')
@@ -253,32 +253,31 @@ class ClassBalancerGeneratorXY:
                         x_batch = np.array([]).astype(output_dtype)
                         y_batch = np.array([]).astype(output_dtype)
                     
-                    pending_augmentations[label] = pending_augmentations[label] + (r-1)
-                    pending = int(int(pending_augmentations[label]))
+                    pending_augmentations[label] += (r-1)
 
                     #generate augmented copies of images so we balance classes
-                    if(pending>0):
+                    if(np.floor(pending_augmentations[label])>0):
                         x1 = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
                         x_orig = np.array([x1])
                         y_orig = np.array([y])
 
-                        #show_image(x_orig[0], is_bgr=False)
+#                        show_image(x_orig[0], is_bgr=False)
                         ir = self.image_augmentation.flow(x_orig, y_orig, batch_size=1)
-                        for i in range(pending):
+                        while(np.floor(pending_augmentations[label])>0):
                             it = ir.next()
                             x_it = it[0][0]
-                            y_it = it[1]
+                            y_it = it[1][0]
                             x_it = cv2.cvtColor(x_it, cv2.COLOR_RGB2BGR)
                             
-                            x_batch,y_batch = self._add_to_batch(x_batch,y_batch,x,y)
+                            x_batch,y_batch = self._add_to_batch(x_batch,y_batch,x_it,y_it)
 #                            logger.info('yielding batch ' + str(len(self.y_batch)) + ' ' + str(self.batch_size))
                             if(len(y_batch)>=self.batch_size):
-                                logger.info('yielding batch4')
+#                                logger.info('yielding batch4')
                                 yield x_batch,y_batch
-                                x_batch = np.array([]).astype(self.output_dtype)
-                                y_batch = np.array([]).astype(self.output_dtype)
+                                x_batch = np.array([]).astype(output_dtype)
+                                y_batch = np.array([]).astype(output_dtype)
                                 
-                            pending_augmentations[label] = pending_augmentations[label] - pending
+                            pending_augmentations[label] -= 1
 
     #x_ds, y_ds: h5py datasets
     def _add_to_batch(self,x_batch,y_batch,x,y):
@@ -465,13 +464,15 @@ def class_distribution(Y_onehot):
 
 def plot_confusion_matrix(cm, class_labels=None,
                           title='Confusion matrix',
-                          cmap=plt.cm.Blues):
+                          cmap=plt.cm.Blues,
+                          size=3):
     """
     This function prints and plots the confusion matrix.
     """
-
+    
+    f = (len(class_labels)/5)
     fig = plt.figure()
-    fig.set_size_inches(8, 3)
+    fig.set_size_inches(round(size*6*f), round(size*2*f))
     samples = int(cm.sum())
 
     
@@ -482,7 +483,7 @@ def plot_confusion_matrix(cm, class_labels=None,
     plt.title(title)
     plt.colorbar()
     if(class_labels==None):
-        class_labels = ["{:d}".format(x) for x in range(len(cm))]
+        class_labels = ["{:d}".format(i) for i,x in enumerate(range(len(cm)))]
     tick_marks = np.arange(len(class_labels))
     plt.xticks(tick_marks, class_labels, rotation=45)
     plt.yticks(tick_marks, class_labels)
