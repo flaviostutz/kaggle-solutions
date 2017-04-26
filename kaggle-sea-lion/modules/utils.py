@@ -75,7 +75,7 @@ class BatchGeneratorXYH5:
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
     
-    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, tmp_file=None):
+    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, batch_size=64, tmp_file=None):
         self.source_xy_generator = source_xy_generator
         self.Y_labels = None
 
@@ -142,7 +142,7 @@ class ClassBalancerGeneratorXY:
                     self.ratio_classes[i] = min(1+max_augmentation_ratio, self.ratio_classes[i])
 
         self.ratio_classes = output_weight * self.ratio_classes
-        self.setup_flow(start_ratio,end_ratio)
+        self.setup_flow(start_ratio,end_ratio,batch_size)
     
     def setup_flow(self, output_start_ratio, output_end_ratio, batch_size=64):
         if(output_start_ratio>output_end_ratio):

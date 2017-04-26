@@ -16,13 +16,6 @@ from keras.layers import core
 
 CLASS_LABELS = ['0-adult_male', '1-subadult_male', '2-adult_female', '3-juvenile', '4-pup', '5-non lion']
 
-#colors in bgr reference
-ADULT_MALES = 0
-SUBADULT_MALE = 1
-ADULT_FEMALE = 2
-JUVENILE = 3
-PUP = 4
-
 #each index is a min/max color for a class mark
 C_MIN = [
             np.array([0, 0, 160]),
@@ -68,40 +61,14 @@ def convnet_alexnet_lion_keras(image_dims):
 
     return models.Model([input], [fc_2])
 
-def convnet_alexnet2_lion_keras(image_dims):
-
-    NR_CLASSES = 6
-
-    input = layers.Input(shape=image_dims, name="Input")
-    conv_1 = convolutional.Convolution2D(24, 11, 11, border_mode='valid', name="conv_1", activation='relu', init='glorot_uniform')(input)
-    pool_1 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_1")(conv_1)
-    zero_padding_1 = convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_1")(pool_1)
-    conv_2 = convolutional.Convolution2D(64, 3, 3, border_mode='valid', name="conv_2", activation='relu', init='glorot_uniform')(zero_padding_1)
-    pool_2 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_2")(conv_2)
-    zero_padding_2 = keras.layers.convolutional.ZeroPadding2D(padding=(1, 1), name="zero_padding_2")(pool_2)
-    conv_3 = convolutional.Convolution2D(96, 3, 3, border_mode='valid', name="conv_3", activation='relu', init='glorot_uniform')(zero_padding_2)
-    conv_4 = convolutional.Convolution2D(96, 3, 3, border_mode='valid', name="conv_4", activation='relu', init='glorot_uniform')(conv_3)
-    conv_5 = convolutional.Convolution2D(64, 3, 3, border_mode='valid', name="conv_5", activation='relu', init='glorot_uniform')(conv_4)
-    pool_3 = convolutional.MaxPooling2D(pool_size=(3, 3), name="pool_3")(conv_5)
-    flatten = core.Flatten(name="flatten")(pool_3)
-    fc_1 = core.Dense(1024, name="fc_1", activation='relu', init='glorot_uniform')(flatten)
-    fc_1 = core.Dropout(0.5, name="fc_1_dropout")(fc_1)
-    output = core.Dense(1024, name="Output", activation='relu', init='glorot_uniform')(fc_1)
-    output = core.Dropout(0.5, name="Output_dropout")(output)
-    fc_2 = core.Dense(NR_CLASSES, name="fc_2", activation='softmax', init='glorot_uniform')(output)
-
-    return models.Model([input], [fc_2])
-
-
 def convnet_medium_lion_keras(image_dims):
     model = keras.models.Sequential()
 
     model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
 
-    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
-    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
     model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
     model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(256, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
     model.add(convolutional.Conv2D(256, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
     model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
 
@@ -109,7 +76,7 @@ def convnet_medium_lion_keras(image_dims):
 
     model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
-    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
+    model.add(core.Dense(2048, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
     model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
     
