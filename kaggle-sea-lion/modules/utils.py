@@ -312,7 +312,7 @@ with h5py.File(OUTPUT_DIR + '/test.h5', 'w') as outh5:
             if(len(y_ds)>=qtty):
                 return
 
-def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8'):
+def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8', random_skip=0):
     """Dump generator contents into a numpy array. Use x and y parameters to avoid dumping too much data from x (or sometimes y)"""
     Xds = np.array([], dtype=dtype)
     Yds = np.array([], dtype=dtype)
@@ -327,13 +327,18 @@ def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8'):
             s[0] = 0
             Yds = np.reshape(Yds, s.tolist())
         count += len(y_data)
+        
+        #skip samples randomly
+        if(random.random()<random_skip):
+            continue
+            
         if(x):
             Xds = np.concatenate((Xds, x_data))
             if(len(Xds)>nr_samples):
                 Xds = np.split(Xds, [nr_samples])[0]
         if(y):
             Yds = np.concatenate((Yds, y_data))
-            if(len(Yds)>=nr_samples):
+            if(len(Yds)>nr_samples):
                 Yds = np.split(Yds, [nr_samples])[0]
                 
         print_same_line(str(count) + '/' + str(nr_samples))

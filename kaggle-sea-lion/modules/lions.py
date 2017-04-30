@@ -61,7 +61,30 @@ def convnet_alexnet_lion_keras(image_dims):
 
     return models.Model([input], [fc_2])
 
-def convnet_medium_lion_keras(image_dims):
+def convnet_medium1_lion_keras(image_dims):
+    model = keras.models.Sequential()
+
+    model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
+
+    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(256, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+
+    model.add(core.Flatten())
+
+    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
+    
+    return model
+
+
+def convnet_medium2_lion_keras(image_dims):
     model = keras.models.Sequential()
 
     model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
@@ -75,6 +98,28 @@ def convnet_medium_lion_keras(image_dims):
     model.add(core.Flatten())
 
     model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(2048, activation='relu', init='glorot_uniform'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
+    
+    return model
+
+
+def convnet_medium3_lion_keras(image_dims):
+    model = keras.models.Sequential()
+
+    model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
+
+    model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.Conv2D(256, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+
+    model.add(core.Flatten())
+
+    model.add(core.Dense(2048, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
     model.add(core.Dense(2048, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
