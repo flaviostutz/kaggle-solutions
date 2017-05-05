@@ -292,7 +292,7 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
                 #normalize between 0-1
                 #trainX = trainX/255
-                trainY = keras.utils.to_categorical([lion_class], NR_CLASSES)[0]
+                trainY = keras.utils.np_utils.to_categorical([lion_class], NR_CLASSES)[0]
                 utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
                 count_class_added[lion_class] = count_class_added[lion_class] + 1
         
@@ -320,7 +320,7 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
                 #normalize between 0-1
                 #trainX = trainX/255
-                trainY = keras.utils.to_categorical([5], NR_CLASSES)[0]
+                trainY = keras.utils.np_utils.to_categorical([5], NR_CLASSES)[0]
                 utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
                 count_class[5] = count_class[5] + 1
                 count_class_added[5] = count_class_added[5] + 1
