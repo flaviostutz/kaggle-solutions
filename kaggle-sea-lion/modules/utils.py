@@ -10,7 +10,9 @@ import random
 import hashlib
 import itertools
 from sklearn import preprocessing
+import sklearn.metrics as metrics
 from scipy import spatial
+import skimage.feature as feature
 
 from keras import backend as K
 from keras.preprocessing.image import ImageDataGenerator
@@ -19,6 +21,20 @@ from keras.utils.io_utils import HDF5Matrix
 from sys import stdout
 
 from modules.logging import logger
+
+def sliding_window(image, step=(4,4), window=(12,12)):
+    """
+       Generator of slices over the entire image in 2D
+       image=2D greyscale image
+       step=x,y step sizes
+       window=w,h of the sliding window size
+       returns: image slice data generator
+    """
+    # slide a window across the image
+    for y in xrange(0, image.shape[0], step[1]):
+        for x in xrange(0, image.shape[1], step[0]):
+            # yield the current window
+            yield (x, y, image[y:y + window[1], x:x + window[0]])
 
 class BatchGeneratorXYH5:
     """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit in memory"""
@@ -359,7 +375,7 @@ def create_xy_dataset(h5file, x_dims, y_dims, x_dtype='u1', y_dtype='u1'):
 
     x_ds = h5file.create_dataset('X', x_dims_zero, maxshape=x_dims_none, chunks=True, dtype=x_dtype)
     y_ds = h5file.create_dataset('Y', y_dims_zero, maxshape=y_dims_none, chunks=True, dtype=y_dtype)
-    
+
     return x_ds, y_ds
     
     
@@ -646,6 +662,36 @@ def mkdirs(base_dir, dirs=[], recreate=False):
 # import the necessary packages
 import numpy as np
  
+    
+def evaluate_predictions(Y_true, Y_pred, detailed=True, class_labels=None):
+    acc = metrics.accuracy_score(Y_true, Y_pred)
+    logger.info('Accuracy: ' + str(acc))
+
+    if(detailed):
+        if(class_labels==None):
+            unique_labels = np.unique(Y_true)
+            class_labels = [str(s) for s in unique_labels]
+
+        cm = metrics.confusion_matrix(Y_true, Y_pred, range(len(class_labels)))
+
+        logger.info('Number of test samples: ' + str(len(Y_true)) )
+        logger.info('Kappa score: ' + str(metrics.cohen_kappa_score(Y_true, Y_pred)) + ' (-1 bad; 0 just luck; 1 great)')
+
+        logger.info('\n' + metrics.classification_report(Y_true, Y_pred, target_names=class_labels, labels=range(len(class_labels))))
+
+        acc_class = cm.diagonal()/np.sum(cm, axis=0)
+        logger.info('Accuracy per class:')
+        for i,acc in enumerate(acc_class):
+            logger.info(str('{}: {:.1f}%'.format(class_labels[i], acc_class[i]*100)))
+
+        logger.info('Confusion matrix:')
+        logger.info('\n' + str(cm))
+        plot_confusion_matrix(cm, class_labels=class_labels, size=2)
+
+def extract_hogs(images, orientations=9, pixels_per_cell=(8, 8), cells_per_block=(3, 3), block_norm='L1', transform_sqrt=False, normalise=None):
+    ims_grey = [cv2.cvtColor(im, cv2.COLOR_RGB2GRAY) for im in images]
+    return np.array([feature.hog(im, orientations=orientations, pixels_per_cell=pixels_per_cell, cells_per_block=cells_per_block) for im in ims_grey])    
+
 # Malisiewicz et al.
 def non_max_suppression_fast(boxes, overlapThresh):
     # if there are no boxes, return an empty list

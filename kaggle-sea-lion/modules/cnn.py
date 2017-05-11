@@ -79,7 +79,6 @@ def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed
         #we only need the highest probability guess
         Y_pred = np.argmax(Y_pred, axis=1)
         
-
         Y = acum.y_ds
         Y = np.array(np.split(Y, [nr_samples]))[0]
         if(len(Y)>0):
@@ -87,26 +86,7 @@ def evaluate_dataset_keras(xy_generator, nr_batches, nr_samples, model, detailed
             lb = preprocessing.LabelBinarizer()
             lb.fit(np.array(range(np.shape(Y[0])[0])))
             Y = lb.inverse_transform(Y)
-
-            if(class_labels==None):
-                unique_labels = np.unique(Y)
-                class_labels = [str(s) for s in unique_labels]
-
-            cm = metrics.confusion_matrix(Y, Y_pred, range(len(class_labels)))
-
-            logger.info('Number of test samples: ' + str(len(Y)) )
-            logger.info('Kappa score: ' + str(metrics.cohen_kappa_score(Y, Y_pred)) + ' (-1 bad; 0 just luck; 1 great)')
-
-            logger.info('\n' + metrics.classification_report(Y, Y_pred, target_names=class_labels, labels=range(len(class_labels))))
-            
-            acc_class = cm.diagonal()/np.sum(cm, axis=0)
-            logger.info('Accuracy per class:')
-            for i,acc in enumerate(acc_class):
-                logger.info(str('{}: {:.1f}%'.format(class_labels[i], acc_class[i]*100)))
-            
-            logger.info('Confusion matrix:')
-            logger.info('\n' + str(cm))
-            utils.plot_confusion_matrix(cm, class_labels=class_labels, size=2)
+            utils.evaluate_predictions(Y, Y_pred, detailed=detailed, class_labels=class_labels)
             
         else:
             logger.info('No samples found in xy_generator')
