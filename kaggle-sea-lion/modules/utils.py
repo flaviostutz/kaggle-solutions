@@ -22,19 +22,26 @@ from sys import stdout
 
 from modules.logging import logger
 
-def sliding_window(image, step=(4,4), window=(12,12)):
+import skimage.feature as feature
+
+def extract_hog(im, orientations=9, pixels_per_cell=(8,8), cells_per_block=(3,3), visualize=False, normalize=True):
+    if(len(im.shape)==3):
+        im = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY)
+    return feature.hog(im, orientations, pixels_per_cell, cells_per_block, visualize, normalize)
+
+def extract_lbp(im, P=1, R=1, method='ror'):
+    if(len(im.shape)==3):
+        im = cv2.cvtColor(im,cv2.COLOR_BGR2GRAY)
+    r = feature.local_binary_pattern(im, P, R, method=method)
+    return r
+
+def proportional_one(values, value):
     """
-       Generator of slices over the entire image in 2D
-       image=2D greyscale image
-       step=x,y step sizes
-       window=w,h of the sliding window size
-       returns: image slice data generator
+        Normalizes value between 0-1 according to min/max among 'values' array
     """
-    # slide a window across the image
-    for y in xrange(0, image.shape[0], step[1]):
-        for x in xrange(0, image.shape[1], step[0]):
-            # yield the current window
-            yield (x, y, image[y:y + window[1], x:x + window[0]])
+    maxx = np.max(values)
+    minn = np.min(values)
+    return (value - minn)/(maxx-minn)
 
 class BatchGeneratorXYH5:
     """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit in memory"""
@@ -425,7 +432,7 @@ def print_same_line(log, use_logger=True):
         logger.debug(l)
 
         
-def print_progress(current_value, target_value, elapsed_seconds=None, status=None, size=25, use_logger=True):
+def print_progress(current_value, target_value, elapsed_seconds=None, status=None, size=25, use_logger=True, show_remaining=False):
     perc = (current_value/target_value)
     pos = round(perc * size)
     s = '{:.0f}/{:.0f} ['.format(current_value, target_value)
@@ -436,7 +443,10 @@ def print_progress(current_value, target_value, elapsed_seconds=None, status=Non
         s = s + '.'
     s = s + '] {:d}%'.format(int(perc*100))
     if(elapsed_seconds!=None):
-        s = s + ' {:d}s'.format(int(elapsed_seconds))
+        s = s + ' {:d}'.format(int(elapsed_seconds))
+        if show_remaining and perc>0.1:
+            s = s + '/{:d}'.format(int(elapsed_seconds/perc))
+        s = s + 's'
     if(status!=None):
         s = s + ' ' + str(status)
     print_same_line(s, use_logger=use_logger)
@@ -692,61 +702,6 @@ def extract_hogs(images, orientations=9, pixels_per_cell=(8, 8), cells_per_block
     ims_grey = [cv2.cvtColor(im, cv2.COLOR_RGB2GRAY) for im in images]
     return np.array([feature.hog(im, orientations=orientations, pixels_per_cell=pixels_per_cell, cells_per_block=cells_per_block) for im in ims_grey])    
 
-# Malisiewicz et al.
-def non_max_suppression_fast(boxes, overlapThresh):
-    # if there are no boxes, return an empty list
-    if len(boxes) == 0:
-        return []
- 
-    # if the bounding boxes integers, convert them to floats --
-    # this is important since we'll be doing a bunch of divisions
-    if boxes.dtype.kind == "i":
-        boxes = boxes.astype("float")
-
-    # initialize the list of picked indexes	
-    pick = []
- 
-    # grab the coordinates of the bounding boxes
-    x1 = boxes[:,0]
-    y1 = boxes[:,1]
-    x2 = boxes[:,2]
-    y2 = boxes[:,3]
- 
-    # compute the area of the bounding boxes and sort the bounding
-    # boxes by the bottom-right y-coordinate of the bounding box
-    area = (x2 - x1 + 1) * (y2 - y1 + 1)
-    idxs = np.argsort(y2)
- 
-    # keep looping while some indexes still remain in the indexes
-    # list
-    while len(idxs) > 0:
-        # grab the last index in the indexes list and add the
-        # index value to the list of picked indexes
-        last = len(idxs) - 1
-        i = idxs[last]
-        pick.append(i)
- 
-        # find the largest (x, y) coordinates for the start of
-        # the bounding box and the smallest (x, y) coordinates
-        # for the end of the bounding box
-        xx1 = np.maximum(x1[i], x1[idxs[:last]])
-        yy1 = np.maximum(y1[i], y1[idxs[:last]])
-        xx2 = np.minimum(x2[i], x2[idxs[:last]])
-        yy2 = np.minimum(y2[i], y2[idxs[:last]])
- 
-        # compute the width and height of the bounding box
-        w = np.maximum(0, xx2 - xx1 + 1)
-        h = np.maximum(0, yy2 - yy1 + 1)
- 
-        # compute the ratio of overlap
-        overlap = (w * h) / area[idxs[:last]]
- 
-        # delete all indexes from the index list that have
-        idxs = np.delete(idxs, np.concatenate(([last], np.where(overlap > overlapThresh)[0])))
- 
-    # return only the bounding boxes that were picked using the
-    # integer data type
-    return boxes[pick].astype("int")
             
 class Timer:
     def __init__(self, name, debug=True):
