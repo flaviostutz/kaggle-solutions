@@ -4,6 +4,7 @@ import skimage.transform as transform
 from multiprocessing import Pool
 import multiprocessing
 import itertools
+import cv2
 
 from modules.logging import logger
 import modules.utils as utils
@@ -31,62 +32,78 @@ def sliding_window_generator(image, step=(15,15), window=(32,32), pyramid_scale=
         t = Timer('sliding_window')
         # slide a window across the image
         for y in range(0, im_scaled.shape[0], step[0]):
-            utils.print_progress(y, im_scaled.shape[0], elapsed_seconds=t.elapsed(), status='sliding window')
+            utils.print_progress(y, im_scaled.shape[0], elapsed_seconds=t.elapsed(), status='sliding window', show_remaining=True)
             for x in range(0, im_scaled.shape[1], step[1]):
                 # yield the current window
                 yield (y, x, im_scaled[y:y + window[0], x:x + window[1]], scale)
         t.stop()
 
-def evaluate_regions(region_generator, evaluate_function, score_threshold=10, apply_non_max_suppression=True, supression_overlap_threshold=0.3, threads=None, batch_size=100):
+def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, filter_labels=None, apply_non_max_suppression=True, supression_overlap_threshold=0.3, threads=None, batch_size=100):
     """
        Iterate over region generator and for each region, call evaluate_function.
        image=2D greyscale image
        step=x,y step sizes
        window=w,h of the sliding window size
        score_threshold=minimum score for evaluated region that will be return in results
-       returns: detected_boxes, boxes_images
-                ex: box1 = (x1,y1,x2,y2,score)
-                    box2 = (x1,y1,x2,y2,score)
-                    return [box1,box2], [img1,img2]
+       threads: if None, no multithreading applied. if -1, uses maximum nr of cores or a specific number of threads
+       returns: detections, patches
+                ex: detection1 = (x1,y1,x2,y2,score,label,text)
+                    detection2 = (x1,y1,x2,y2,score,label,text)
+                    return [detection1,detection2], [patch1,patch2]
     """
-    if threads==None or threads<=0:
-        threads = multiprocessing.cpu_count()
         
     detections = []
     images = []
-    
-    with Pool(threads) as p:
+
+    #NOT USING THREADS
+    if(threads==None):
         er = EvalRegion()
-        #process in batches
-        batch_regions = [0]
-        while(len(batch_regions)>0):
-            batch_regions = [(r,evaluate_function,score_threshold) for r in itertools.islice(region_generator, batch_size)]
-            dets_imgs = p.starmap(er.evaluate_region, batch_regions)
-            dets_imgs = [x for x in dets_imgs if x[0] is not None]
-            dets_imgs = np.array(dets_imgs)
-            if(dets_imgs.shape[0]>0):
-                detections += (dets_imgs[:,0].tolist())
-                images += (dets_imgs[:,1].tolist())
+        dets_imgs = []
+        for region in region_generator:
+            ei = er.evaluate_region(region, evaluate_function, filter_score_min, filter_labels)
+            if(ei[0] is not None):
+                dets_imgs.append(ei)
+            dets_imgs0 = np.array(dets_imgs)
+            if(dets_imgs0.shape[0]>0):
+                detections += (dets_imgs0[:,0].tolist())
+                images += (dets_imgs0[:,1].tolist())
+    
+    #USING THREADS
+    else:
+        if threads<=0:
+            threads = multiprocessing.cpu_count()
+        with Pool(threads) as p:
+            er = EvalRegion()
+            #process in batches
+            batch_regions = [0]
+            while(len(batch_regions)>0):
+                batch_regions = [(r,evaluate_function,filter_score_min,filter_labels) for r in itertools.islice(region_generator, batch_size)]
+                dets_imgs = p.starmap(er.evaluate_region, batch_regions)
+                dets_imgs = [x for x in dets_imgs if x[0] is not None]
+                dets_imgs = np.array(dets_imgs)
+                if(dets_imgs.shape[0]>0):
+                    detections += (dets_imgs[:,0].tolist())
+                    images += (dets_imgs[:,1].tolist())
             
-        if apply_non_max_suppression:
-            t = Timer('non_max_suppression')
-            detections = non_maxima_suppression(np.array(detections), overlap_threshold=supression_overlap_threshold)
-            t.stop()
-            
-        return np.array(detections, dtype='int'), images
+    if apply_non_max_suppression:
+        t = Timer('non_max_suppression. boxes=' + str(len(detections)))
+        detections = non_maxima_suppression(np.array(detections), overlap_threshold=supression_overlap_threshold)
+        t.stop()
+
+    return np.array(detections), images
 
 class EvalRegion():
     win_size = None
-    def evaluate_region(self, region, evaluate_function, score_threshold):
+    def evaluate_region(self, region, evaluate_function, filter_score_min, filter_labels):
         img = region[2]
         if self.win_size==None:
             self.win_size = img.shape
         #boundary patches are smaller than the first ones
         if img.shape[0]==self.win_size[0] and img.shape[1]==self.win_size[1]:
-            score = evaluate_function(img)
+            score,label = evaluate_function(img)
             scale = region[3]
-            eval_detection = [region[0], region[1], img.shape[0]*(1/scale), img.shape[1]*(1/scale), score]
-            if score>=score_threshold:
+            eval_detection = [region[0], region[1], img.shape[0]*(1/scale), img.shape[1]*(1/scale), score, label]
+            if score>=filter_score_min and (filter_labels==None or label in filter_labels):
                 return eval_detection, img
         return None, None
 
@@ -135,13 +152,13 @@ def overlapping_area(detection_1, detection_2):
     total_area = area_1 + area_2 - overlap_area
     return overlap_area / float(total_area)
 
-
 def non_maxima_suppression(detections, overlap_threshold=0.2):
+    """ Remove overlapping detections. detections is an array of (x0, y0, x1, y1, score, label) """
     '''
     This function performs Non-Maxima Suppression.
     `detections` consists of a list of detections.
     Each detection is in the format ->
-    [y-top-left, x-top-left, height-of-detection, width-of-detection, confidence-of-detections]
+    [y-top-left, x-top-left, height-of-detection, width-of-detection, confidence-of-detections, label]
     If the area of overlap is greater than the `threshold`,
     the area with the lower confidence score is removed.
     The output is a list of detections.
@@ -172,3 +189,26 @@ def non_maxima_suppression(detections, overlap_threshold=0.2):
             del detections[index]
 
     return new_detections
+
+def draw_detections(detections, img, detection_to_colortext=None):
+    """ detections is an array of (x0, y0, x1, y1, score, label) """
+    for i, detection in enumerate(detections):
+        detint = detection.astype('int')
+        score = int(detections[i][4])
+        p = img[detint[0]:detint[0]+detint[2],detint[1]:detint[1]+detint[3]]
+        color = (0,0,255)
+        if(detection_to_colortext!=None):
+            color,text = detection_to_colortext(detection)
+            if(color is None):
+                color = (0,0,255)
+            cv2.rectangle(img, (detint[1],detint[0]), (detint[3]+detint[1],detint[2]+detint[0]), color=color, thickness=2)
+            if(text is not None):
+                cv2.putText(img,text,(detint[1]+5,detint[0]+18), cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,0,255),1,cv2.LINE_AA)
+
+def extract_patches(detections, img):
+    patches = []
+    for i, detection in enumerate(detections):
+        region = detection.astype('int')
+        p = img[region[0]:region[0]+region[2],region[1]:region[1]+region[3]]
+        patches.append(p)
+    return patches

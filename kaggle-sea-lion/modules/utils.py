@@ -335,8 +335,18 @@ with h5py.File(OUTPUT_DIR + '/test.h5', 'w') as outh5:
             if(len(y_ds)>=qtty):
                 return
 
-def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8', random_skip=0):
-    """Dump generator contents into a numpy array. Use x and y parameters to avoid dumping too much data from x (or sometimes y)"""
+def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8', filter_function=None):
+    """Dump generator contents into a numpy array. Use x and y parameters to avoid dumping too much data from x (or sometimes y).
+        parameters:
+           xy_generator - generator that returns a x,y tuple of data
+           nr_samples - max number os samples to extract (iterate) from generator
+           x - whatever include 'x' data in output array
+           y - whatever include 'y' data in output array
+           filter_function - function called for each sample to verify if it is meant to be included to output array or not. 
+               Example: def validate_sample(x, y):
+                            return y==1
+           
+    """
     Xds = np.array([], dtype=dtype)
     Yds = np.array([], dtype=dtype)
     count = 0
@@ -350,11 +360,24 @@ def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8', r
             s[0] = 0
             Yds = np.reshape(Yds, s.tolist())
         count += len(y_data)
+
+        if(filter_function!=None):
+            remove_idx = []
+            for i,sample_x in enumerate(x_data):
+                sample_y = y_data[i]
+                if(not filter_function(sample_x,sample_y)):
+                    remove_idx.append(i)
+            if(len(remove_idx)):
+                sx = np.array(np.shape(x_data))
+                sx[0] = -1
+                sy = np.array(np.shape(y_data))
+                sy[0] = -1
+                
+                x_data = np.delete(x_data, remove_idx, axis=0)
+                y_data = np.delete(y_data, remove_idx, axis=0)
+                x_data = np.reshape(x_data, sx.tolist())
+                y_data = np.reshape(y_data, sy.tolist())
         
-        #skip samples randomly
-        if(random.random()<random_skip):
-            continue
-            
         if(x):
             Xds = np.concatenate((Xds, x_data))
             if(len(Xds)>nr_samples):
@@ -443,10 +466,9 @@ def print_progress(current_value, target_value, elapsed_seconds=None, status=Non
         s = s + '.'
     s = s + '] {:d}%'.format(int(perc*100))
     if(elapsed_seconds!=None):
-        s = s + ' {:d}'.format(int(elapsed_seconds))
+        s = s + ' {:d}s'.format(int(elapsed_seconds))
         if show_remaining and perc>0.1:
-            s = s + '/{:d}'.format(int(elapsed_seconds/perc))
-        s = s + 's'
+            s = s + ' remaining={:d}s'.format(int(elapsed_seconds/perc-elapsed_seconds))
     if(status!=None):
         s = s + ' ' + str(status)
     print_same_line(s, use_logger=use_logger)
