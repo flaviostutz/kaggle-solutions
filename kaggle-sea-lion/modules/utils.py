@@ -84,8 +84,8 @@ class BatchGeneratorXYH5:
             x_list = []
             y_list = []
 
-            for i,x in enumerate(batch_x):
-                y = batch_y[i]
+            for i,y in enumerate(batch_y):
+                x = batch_x[i]
                 x_list.append(x)
                 y_list.append(y)
             
@@ -94,13 +94,38 @@ class BatchGeneratorXYH5:
             yield x_list, y_list
             counter += 1
 
-    
+            
+class JoinGeneratorsXY:
+    """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit in memory"""
+
+    def __init__(self, xy_generators):
+        self.xy_generators = xy_generators
+        
+    def flow(self):
+        while True:
+            for generator in self.xy_generators:
+                yield generator.next()
+            
+            
 class ClassBalancerGeneratorXY:
-    """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes"""
+    """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes
+    source_xy_generator: source generator from where samples will be fetched
+    image_augmentation: image augmentation function used when new classes are needed to be created (ratio>1)
+    max_augmentation_ratio: max number of times of original quantity of samples that it will be permitted to augment an class
+    max_undersampling_ratio: max ratio of original samples that can be ignored from source generator
+    output_weight: distribution of weight among classes. if 1, all classes will have weight 1 on output. Can be in format (2,3,1,2,1) so that class 0, have weight 2, class 1, weight 3 and so on.
+    enforce_max_ratios: don't exceed max ratio constraints in any hypotesis
+    start_ratio: ratio position on source stream to begin outputing samples
+    end_ratio: ratio position on source stream that indicates the end of outputing samples
+    batch_size: qtty of samples per batch
+    tmp_file: if set, a temporary cache of overall items in source stream so we can avoid traversing the entire stream before starting processing if it was done before (WARNING: may have problems if the input is dynamic)
+    change_y: change input Y label class per another label. for example, ((1,2),(2,3),(3,3)) will make it return 2 when original class is 1 and 3 when original class is 2
+    """
     
-    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, batch_size=64, tmp_file=None):
+    def __init__(self, source_xy_generator, image_augmentation=None, max_augmentation_ratio=3, max_undersampling_ratio=1, output_weight=1, enforce_max_ratios=False, start_ratio=0, end_ratio=1, batch_size=64, tmp_file=None, change_y=None):
         self.source_xy_generator = source_xy_generator
         self.Y_labels = None
+        self.change_y = change_y
 
         logger.info('loading input data for class distribution analysis...')
 
@@ -124,7 +149,10 @@ class ClassBalancerGeneratorXY:
             if(tmp_file!=None):
                 logger.info('saving Y to temp file ' + tmp_file)
                 np.save(tmp_file, Y_onehot)
-            
+
+        if(self.change_y is not None):
+            Y_onehot = change_classes(Y_onehot, self.change_y)
+
         self.Y_labels = onehot_to_label(Y_onehot)
         self.count_classes = class_distribution(Y_onehot)
         self.nr_classes = np.shape(self.count_classes)[0]
@@ -165,7 +193,7 @@ class ClassBalancerGeneratorXY:
                     self.ratio_classes[i] = min(1+max_augmentation_ratio, self.ratio_classes[i])
 
         self.ratio_classes = output_weight * self.ratio_classes
-        self.setup_flow(start_ratio,end_ratio,batch_size)
+        self.setup_flow(start_ratio,end_ratio,batch_size=batch_size)
     
     def setup_flow(self, output_start_ratio, output_end_ratio, batch_size=64):
         if(output_start_ratio>output_end_ratio):
@@ -221,13 +249,17 @@ class ClassBalancerGeneratorXY:
 
         x_batch = np.array([], dtype=output_dtype)
         y_batch = np.array([], dtype=output_dtype)
-
+        
         pending_augmentations = np.zeros(self.nr_classes, dtype='uint32')
 
         #process each source batch
         count_samples = 0
         for xs,ys in self.source_xy_generator.flow():
+            if(self.change_y is not None):
+                ys = change_classes(ys, self.change_y)
+
             y_labels = onehot_to_label(ys)
+                    
             for i,x in enumerate(xs):
                 y = ys[i]
             
@@ -474,13 +506,13 @@ def print_progress(current_value, target_value, elapsed_seconds=None, status=Non
     print_same_line(s, use_logger=use_logger)
 
     
-def is_distant_from_others(point, other_points, min_distance):
+def is_far_from_others(point, other_points, min_distance):
     lp = np.array(point)
     lp = np.reshape(lp, (1,2))
 
     dist = spatial.distance.cdist(lp,other_points)[0]
-    if(len(dist)>1):
-        dist = np.sort(dist)[1:]
+    if(len(dist)>0):
+        dist = np.sort(dist)[0:]
         if(np.amin(dist)<=min_distance):
             return False
     return True
@@ -498,7 +530,29 @@ print(onehot_to_label(y))"""
         lb = preprocessing.LabelBinarizer()
         lb.fit(np.array(range(nr_classes)))
         return lb.inverse_transform(Y_onehot)
+    
+def label_to_onehot(Y_labels, number_classes):
+    lb = preprocessing.LabelBinarizer()
+    lb.fit(np.array(range(number_classes)))
+    return lb.transform(Y_labels)
+    
 
+def change_classes(Y_onehot, change_y):
+    """
+        Change classes of a list of onehot encoded samples
+        Y_onehot: an array of samples encoded using one hot encoding. ex.: np.array([[1,0,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,1]])
+        change_y: list of pairs of class labels to change from/to. ex.: applying change_y [(0,2),(2,3),(5,1),(1,3)] to above example array will result 
+        [[0, 0, 1, 0, 0, 0],
+         [0, 0, 0, 1, 0, 0],
+         [0, 1, 0, 0, 0, 0]] 
+        returns Y_onehot with exchanged classes
+    """
+    Y_labels = onehot_to_label(Y_onehot)
+    for cy in change_y:
+        Y_labels[Y_labels == cy[0]] = -cy[1]
+    Y_labels[Y_labels < 0] *= -1
+    return label_to_onehot(Y_labels, 6)
+    
     
 #Y_categorical: numpy array with one hot encoding data
 def class_distribution(Y_onehot):

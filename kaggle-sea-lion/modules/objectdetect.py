@@ -5,12 +5,13 @@ from multiprocessing import Pool
 import multiprocessing
 import itertools
 import cv2
+import tensorflow as tf
 
 from modules.logging import logger
 import modules.utils as utils
 from modules.utils import Timer
 
-def sliding_window_generator(image, step=(15,15), window=(32,32), pyramid_scale=0.5, pyramid_max_layers=1):
+def sliding_window_generator(image, step=(15,15), window=(32,32), pyramid_firstscale=None, pyramid_scale=0.5, pyramid_max_layers=1):
     """
        Generator of slices over the entire image in 2D
        If pyramid_downscale!=0, will generate slices on reduced image size (maintaining slice size) 
@@ -19,14 +20,16 @@ def sliding_window_generator(image, step=(15,15), window=(32,32), pyramid_scale=
        step: x,y step sizes
        window: w,h of the sliding window size
        pyramid_ratio: reduction factor at each reduction iteration
-       returns: image slice data generator for items in the format (x1, y1, x2, y2, pyramid_scale)
+       returns: image slice data generator for items in the format (y, x, image_region_scaled, pyramid_scale)
     """
-#     multichannel = (len(image.shape)==3)
-    # iterate over image layers
-#    utils.show_image(image)
-#     for im_scaled in transform.pyramid_gaussian(image, downscale=pyramid_downscale, max_layer=pyramid_max_layers):#, multichannel=multichannel):
-    for im_scaled,scale in pyramid_generator(image, scale=pyramid_scale, max_layers=pyramid_max_layers):#, multichannel=multichannel):
-#        utils.show_image(im_scaled)
+    
+    print(image.shape)
+    
+    if(pyramid_firstscale!=None):
+        image = transform.rescale(image, pyramid_firstscale)
+        print(image.shape)
+    
+    for im_scaled,scale in pyramid_generator(image, scale=pyramid_scale, max_layers=pyramid_max_layers):
         if im_scaled.shape[1] < window[1] or im_scaled.shape[1] < window[1]:
             return
         t = Timer('sliding_window')
@@ -38,7 +41,7 @@ def sliding_window_generator(image, step=(15,15), window=(32,32), pyramid_scale=
                 yield (y, x, im_scaled[y:y + window[0], x:x + window[1]], scale)
         t.stop()
 
-def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, filter_labels=None, apply_non_max_suppression=True, supression_overlap_threshold=0.3, threads=None, batch_size=100):
+def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, filter_labels=None, apply_non_max_suppression=True, supression_overlap_threshold=0.3, threads=None, batch_size=100, apply_nms_each=3000000):
     """
        Iterate over region generator and for each region, call evaluate_function.
        image=2D greyscale image
@@ -46,6 +49,7 @@ def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, 
        window=w,h of the sliding window size
        score_threshold=minimum score for evaluated region that will be return in results
        threads: if None, no multithreading applied. if -1, uses maximum nr of cores or a specific number of threads
+       apply_nms_each: if you are experiencing too much memory overhead due to a high number of detections, set this parameter to something in order of millions so that intermediary cleanups (nms) will be performed during evaluation. Note that a lower number may reduce a little the quality of NMS because it ideally uses the entire dataset to analyse suppression.
        returns: detections, patches
                 ex: detection1 = (x1,y1,x2,y2,score,label,text)
                     detection2 = (x1,y1,x2,y2,score,label,text)
@@ -67,6 +71,12 @@ def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, 
             if(dets_imgs0.shape[0]>0):
                 detections += (dets_imgs0[:,0].tolist())
                 images += (dets_imgs0[:,1].tolist())
+            #cleanup overlapping boxes from time to time to avoid too much memory usage
+            if(apply_non_max_suppression and len(detections)>3000000):
+                t = Timer('non_max_suppression. boxes=' + str(len(detections)))
+                detections = non_maxima_suppression(detections, overlap_threshold=supression_overlap_threshold)
+                t.stop()
+
     
     #USING THREADS
     else:
@@ -84,10 +94,12 @@ def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, 
                 if(dets_imgs.shape[0]>0):
                     detections += (dets_imgs[:,0].tolist())
                     images += (dets_imgs[:,1].tolist())
-            
+
+    #TODO: APPLY NNS AT EACH X DETECTIONS, INSTEAD TO LET IT TO THE END SO THAT THE ALGO GETS OPTMIZED (MAYBE?)
+    #4869104
     if apply_non_max_suppression:
         t = Timer('non_max_suppression. boxes=' + str(len(detections)))
-        detections = non_maxima_suppression(np.array(detections), overlap_threshold=supression_overlap_threshold)
+        detections = non_maxima_suppression(detections, overlap_threshold=supression_overlap_threshold)
         t.stop()
 
     return np.array(detections), images
@@ -102,7 +114,7 @@ class EvalRegion():
         if img.shape[0]==self.win_size[0] and img.shape[1]==self.win_size[1]:
             score,label = evaluate_function(img)
             scale = region[3]
-            eval_detection = [region[0], region[1], img.shape[0]*(1/scale), img.shape[1]*(1/scale), score, label]
+            eval_detection = [region[0], region[1], round(img.shape[0]*(1/scale)), round(img.shape[1]*(1/scale)), score, label]
             if score>=filter_score_min and (filter_labels==None or label in filter_labels):
                 return eval_detection, img
         return None, None
@@ -113,13 +125,53 @@ def pyramid_generator(image, scale=0.5, max_layers=-1):
         max_layers = 99999
     for layer in range(max_layers):
         if(layer>0):
-            downscale = int(1/scale)
-            image = transform.downscale_local_mean(image, (downscale,downscale))
+#            if(len(image.shape)==2):
+#                downscale = (downscale,downscale)
+#            elif(len(image.shape)==3):
+#                downscale = (downscale,downscale,1)
+            print(str(image.shape) + ' ' + str(scale))
+#            image = transform.downscale_local_mean(image, downscale)
+            image = transform.rescale(image, scale)
+            print(str(image.shape))
             current_scale = current_scale*scale
             if image.shape[0]==1 or image.shape[1]==1:
                 return
+        logger.info('pyramid layer=' + str(layer) + ' image=' + str(image.shape) + ' scale=' + str(current_scale))
         yield image, current_scale
 
+def non_maxima_suppression(detections, overlap_threshold=0.2, max_detections=99999, strict=True):
+    """
+    Performs Non Maxima Suppresion algorithm removing overlapping boxes on detections list
+    detections: list of detections in format (y,x,h,w,score)
+    overlap_threshold: percentage of boxes with overlapping areas to keep
+    max_detections: max boxes in result
+    strict: Tensor Flow NMS implementation used by this function is very optimized, but it keep some boxes when
+            box sizes differ. Setting this to true will apply a more precise (but slower) algorithm on results
+            before returning in order to remove those remaining boxes.
+    """
+    if(len(detections)==0):
+        return detections
+    detections = np.array(detections)
+    b = detections[:,0:4]
+    #tensorflow need boxes in y1,x1,y2,x2 (we have boxes in y,x,h,w)
+    boxes = np.array([(c[0],c[1],c[0]-c[2],c[1]-c[3]) for c in b], dtype='int')
+    scores = detections[:,4]
+    keeped_detections = tf.image.non_max_suppression(
+        boxes,
+        scores,
+        max_detections,
+        iou_threshold=overlap_threshold,
+        name=None
+    )
+    with tf.Session() as sess:
+        detections = detections[keeped_detections.eval()]
+    
+    if(strict):
+        detections = non_maxima_suppression_precise(detections, overlap_threshold=overlap_threshold)
+
+    return detections
+    
+    
 def overlapping_area(detection_1, detection_2):
     '''
     Function to calculate overlapping area'si
@@ -152,13 +204,15 @@ def overlapping_area(detection_1, detection_2):
     total_area = area_1 + area_2 - overlap_area
     return overlap_area / float(total_area)
 
-def non_maxima_suppression(detections, overlap_threshold=0.2):
-    """ Remove overlapping detections. detections is an array of (x0, y0, x1, y1, score, label) """
+
+def non_maxima_suppression_precise(detections, overlap_threshold=0.2):
     '''
-    This function performs Non-Maxima Suppression.
+    This function performs Non-Maxima Suppression. Tensor Flow implementation is way more optimized than this (this
+    implementation doesn't scale at millions of samples), but it keeps some boxes when they have different sizes. 
+    After passing TF implementation, using this algorithm on result will cleanup remanining boxes.
     `detections` consists of a list of detections.
     Each detection is in the format ->
-    [y-top-left, x-top-left, height-of-detection, width-of-detection, confidence-of-detections, label]
+    [y-top-left, x-top-left, height-of-detection, width-of-detection, confidence-of-detections]
     If the area of overlap is greater than the `threshold`,
     the area with the lower confidence score is removed.
     The output is a list of detections.
@@ -169,7 +223,7 @@ def non_maxima_suppression(detections, overlap_threshold=0.2):
     # Sort the detections based on confidence score
     detections = sorted(detections, key=lambda detections: detections[4], reverse=True)
     # Unique detections will be appended to this list
-    new_detections=[]
+    new_detections = []
     # Append the first detection
     new_detections.append(detections[0])
     # Remove the detection from the original list
@@ -188,8 +242,9 @@ def non_maxima_suppression(detections, overlap_threshold=0.2):
             new_detections.append(detection)
             del detections[index]
 
-    return new_detections
-
+    return new_detections    
+    
+    
 def draw_detections(detections, img, detection_to_colortext=None):
     """ detections is an array of (x0, y0, x1, y1, score, label) """
     for i, detection in enumerate(detections):
@@ -203,7 +258,7 @@ def draw_detections(detections, img, detection_to_colortext=None):
                 color = (0,0,255)
             cv2.rectangle(img, (detint[1],detint[0]), (detint[3]+detint[1],detint[2]+detint[0]), color=color, thickness=2)
             if(text is not None):
-                cv2.putText(img,text,(detint[1]+5,detint[0]+18), cv2.FONT_HERSHEY_SIMPLEX, 0.5,(0,0,255),1,cv2.LINE_AA)
+                cv2.putText(img,text,(detint[1]+5,detint[0]+18), cv2.FONT_HERSHEY_SIMPLEX, 0.3,(0,0,255),1,cv2.LINE_AA)
 
 def extract_patches(detections, img):
     patches = []

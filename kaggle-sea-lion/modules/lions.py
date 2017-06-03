@@ -204,7 +204,7 @@ def find_class(image, point):
     return result
 
 
-def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, debug=False, min_distance_others=50, non_lion_distance=150):
+def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, debug=False, min_distance_others=50, non_lion_distance=150, export_non_lion=True):
     
     NR_CLASSES = 6
    
@@ -268,11 +268,11 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
 
         lion_class = lion_classes[i]
 
-        is_distant = True
+        is_far = True
         if(min_distance_others>0):
-            is_distant = utils.is_distant_from_others(lion_pos, lion_positions, min_distance_others)
+            is_far = utils.is_far_from_others(lion_pos, lion_positions, min_distance_others)
 
-        if(is_distant):
+        if(is_far):
             #export patch to train dataset
             count2 = count2 + 1
             pw = round(image_dims[1]/2)
@@ -293,45 +293,49 @@ def export_lions(image_raw, image_dotted, target_x_ds, target_y_ds, image_dims, 
                 #normalize between 0-1
                 #trainX = trainX/255
                 trainY = keras.utils.np_utils.to_categorical([lion_class], NR_CLASSES)[0]
-                utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
+                if(target_x_ds!=None and target_y_ds!=None):
+                    utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
                 count_class_added[lion_class] = count_class_added[lion_class] + 1
         
     #identify non sea lion patches
     count3 = 0
-    s = np.shape(image_raw)
-    for i in range(int(count2*1.1)):
-        patch_pos = (random.randint(image_dims[1]*2, s[1]-image_dims[1]*2), random.randint(image_dims[0]*2, s[0]-image_dims[0]*2))
-        is_distant = utils.is_distant_from_others(patch_pos, lion_positions, non_lion_distance)
+    if(export_non_lion):
+        s = np.shape(image_raw)
+        for i in range(int(count2*1.1)):
+            patch_pos = (random.randint(image_dims[1]*2, s[1]-image_dims[1]*2), random.randint(image_dims[0]*2, s[0]-image_dims[0]*2))
+            is_far = utils.is_far_from_others(patch_pos, lion_positions, non_lion_distance)
 
-        if(is_distant):
-            #export patch to train dataset
-            pw = round(image_dims[1]/2)
-            ph = image_dims[1] - pw
-            #trainX = image_raw[lion_pos[1]-pw:lion_pos[1]+ph,lion_pos[0]-pw:lion_pos[0]+ph]
-            trainX = utils.crop_image_fill(image_raw, (patch_pos[1]-pw,patch_pos[0]-pw), (patch_pos[1]+ph,patch_pos[0]+ph))
+            if(is_far):
+                #export patch to train dataset
+                pw = round(image_dims[1]/2)
+                ph = image_dims[1] - pw
+                #trainX = image_raw[lion_pos[1]-pw:lion_pos[1]+ph,lion_pos[0]-pw:lion_pos[0]+ph]
+                trainX = utils.crop_image_fill(image_raw, (patch_pos[1]-pw,patch_pos[0]-pw), (patch_pos[1]+ph,patch_pos[0]+ph))
 
-            m = np.mean(trainX)
-            
-            if(m>50 and m<200):
-                count3 = count3 + 1
-                if(debug):
-                    images.append(trainX)
-                    cv2.circle(debug_image,patch_pos,round(w/2),(0,255,0),3)
+                m = np.mean(trainX)
 
-                #normalize between 0-1
-                #trainX = trainX/255
-                trainY = keras.utils.np_utils.to_categorical([5], NR_CLASSES)[0]
-                utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
-                count_class[5] = count_class[5] + 1
-                count_class_added[5] = count_class_added[5] + 1
+                if(m>50 and m<200):
+                    count3 = count3 + 1
+                    if(debug):
+                        images.append(trainX)
+                        cv2.circle(debug_image,patch_pos,round(w/2),(0,255,0),3)
+
+                    #normalize between 0-1
+                    #trainX = trainX/255
+                    trainY = keras.utils.np_utils.to_categorical([5], NR_CLASSES)[0]
+                    if(target_x_ds!=None and target_y_ds!=None):
+                        utils.add_sample_to_dataset(target_x_ds, target_y_ds, trainX, trainY)
+                    count_class[5] = count_class[5] + 1
+                    count_class_added[5] = count_class_added[5] + 1
 
     logger.info('sea lions found: ' + str(count1))
     logger.info('sea lions added to dataset: ' + str(count2))
     logger.info('non sea lions added to dataset: ' + str(count3))
-    logger.info('dataset size: ' + str(len(target_x_ds)))
+    if(target_x_ds!=None and target_y_ds!=None):
+        logger.info('dataset size: ' + str(len(target_x_ds)))
                 
     if(debug):
         utils.show_image(debug_image, size=40, is_bgr=True)
         utils.show_images(images, cols=10, is_bgr=True, size=1.5)
     
-    return count_class, count_class_added
+    return count_class, count_class_added, lion_positions, lion_classes
