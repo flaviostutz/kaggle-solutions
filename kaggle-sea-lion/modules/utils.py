@@ -100,12 +100,22 @@ class JoinGeneratorsXY:
 
     def __init__(self, xy_generators):
         self.xy_generators = xy_generators
-        
-    def flow(self):
-        while True:
-            for generator in self.xy_generators:
-                yield generator.next()
+        self.size = 0
+        for g in self.xy_generators:
+            self.size += g.size
+
+    def setup_flow(self, start_pos, end_pos):
+        for g in self.xy_generators:
+            g.setup_flow(start_pos, end_pos)
             
+    def flow(self, loop=True):
+        self.xy_generators_it = []
+        for g in self.xy_generators:
+            self.xy_generators_it.append(g.flow(loop=loop))
+        while True:
+            for generator in self.xy_generators_it:
+                yield next(generator)
+                
             
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes
@@ -554,7 +564,7 @@ def change_classes(Y_onehot, change_y):
     return label_to_onehot(Y_labels, 6)
     
     
-#Y_categorical: numpy array with one hot encoding data
+#Y_onehot: numpy array with one hot encoding data
 def class_distribution(Y_onehot):
     nr_classes = Y_onehot.shape[1]
     count_classes = np.zeros(nr_classes)

@@ -72,7 +72,7 @@ def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, 
                 detections += (dets_imgs0[:,0].tolist())
                 images += (dets_imgs0[:,1].tolist())
             #cleanup overlapping boxes from time to time to avoid too much memory usage
-            if(apply_non_max_suppression and len(detections)>3000000):
+            if(apply_non_max_suppression and len(detections)>apply_nms_each):
                 t = Timer('non_max_suppression. boxes=' + str(len(detections)))
                 detections = non_maxima_suppression(detections, overlap_threshold=supression_overlap_threshold)
                 t.stop()
@@ -94,9 +94,12 @@ def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, 
                 if(dets_imgs.shape[0]>0):
                     detections += (dets_imgs[:,0].tolist())
                     images += (dets_imgs[:,1].tolist())
+                #cleanup overlapping boxes from time to time to avoid too much memory usage
+                if(apply_non_max_suppression and len(detections)>apply_nms_each):
+                    t = Timer('non_max_suppression. boxes=' + str(len(detections)))
+                    detections = non_maxima_suppression(detections, overlap_threshold=supression_overlap_threshold)
+                    t.stop()
 
-    #TODO: APPLY NNS AT EACH X DETECTIONS, INSTEAD TO LET IT TO THE END SO THAT THE ALGO GETS OPTMIZED (MAYBE?)
-    #4869104
     if apply_non_max_suppression:
         t = Timer('non_max_suppression. boxes=' + str(len(detections)))
         detections = non_maxima_suppression(detections, overlap_threshold=supression_overlap_threshold)
