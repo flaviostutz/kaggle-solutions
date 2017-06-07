@@ -26,9 +26,9 @@ class ShardGroup:
         self.nr_shards = nr_shards
         self.items = items
         self.base_shards_dir = base_shards_dir
-        self.recreate_shards_dir = recreate_shards_dir
         self.random_seed = random_seed
         utils.mkdirs(base_shards_dir, dirs=[], recreate=recreate_shards_dir)
+        #logging.setup_file_logger(base_shards_dir + 'out.log')
         
     def shard_items(self, shard_id):
         """
@@ -55,7 +55,7 @@ class ShardGroup:
                      or: list of items for this shard, shard directory created for this shard results, True if file 'done' already exists in shard dir
         """
         shard_dir = self.base_shards_dir + str(shard_id) + '/'
-        utils.mkdirs(shard_dir, dirs=shard_dirs, recreate=self.recreate_shards_dir)
+        utils.mkdirs(shard_dir, dirs=shard_dirs, recreate=False)
         return shard_dir
 
     def shard_path(self, shard_id):
@@ -72,9 +72,6 @@ class ShardGroup:
         f.write(info)
         f.close()
 
-    def direct_logger(self, shard_id):
-        logging.setup_file_logger(shard_dir(shard_id) + 'out.log')
-        
     def shard_dirs(self):
         return [self.shard_dir(sid) for sid in range(1,self.nr_shards+1)]
             
