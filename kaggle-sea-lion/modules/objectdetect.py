@@ -41,7 +41,7 @@ def sliding_window_generator(image, step=(15,15), window=(32,32), pyramid_firsts
                 yield (y, x, im_scaled[y:y + window[0], x:x + window[1]], scale)
         t.stop()
 
-def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, filter_labels=None, apply_non_max_suppression=True, supression_overlap_threshold=0.3, threads=None, batch_size=100, apply_nms_each=3000000):
+def evaluate_regions(region_generator, evaluate_function, filter_score_min=0.7, filter_labels=None, apply_non_max_suppression=True, supression_overlap_threshold=0.3, threads=None, batch_size=100, apply_nms_each=1000000):
     """
        Iterate over region generator and for each region, call evaluate_function.
        image=2D greyscale image
@@ -205,6 +205,10 @@ def overlapping_area(detection_1, detection_2):
     area_1 = detection_1[2] * detection_2[3]
     area_2 = detection_2[2] * detection_2[3]
     total_area = area_1 + area_2 - overlap_area
+    
+    if(total_area==0):
+        return 0
+    
     return overlap_area / float(total_area)
 
 
