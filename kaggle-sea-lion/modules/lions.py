@@ -152,6 +152,30 @@ def convnet_simple_lion_keras(image_dims):
     return model
 
 
+def convnet_medium1_single(image_dims):
+    model = keras.models.Sequential()
+
+    model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
+
+    model.add(convolutional.Conv2D(64, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(128, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+    model.add(convolutional.Conv2D(256, (3, 3), activation='relu', padding='same', init='glorot_uniform'))
+    model.add(convolutional.MaxPooling2D(pool_size=(2,2)))
+
+    model.add(core.Flatten())
+
+    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
+    model.add(core.Dropout(0.5))
+    model.add(core.Dense(1, activation='sigmoid', init='glorot_uniform'))
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['acc'])    
+    
+    return model
+
+
 #adapted from alexnet
 def convnet_alexnet_lion_tflearn(image_dims):
 

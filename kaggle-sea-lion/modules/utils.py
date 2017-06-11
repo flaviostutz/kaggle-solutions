@@ -94,7 +94,7 @@ class BatchGeneratorXYH5:
             yield x_list, y_list
             counter += 1
 
-            
+
 class JoinGeneratorsXY:
     """Reads H5 datasets as Python generators. Useful for manipulating datasets that won't fit in memory"""
 
@@ -117,6 +117,63 @@ class JoinGeneratorsXY:
                 yield next(generator)
                 
             
+class ChangeXYGenerator:
+    """Reads an input xy generator and change X and Y data by calling a function that will update its values
+       xy_generator: generator of xy data
+       change_xy_function: a function that accepts (x,y) data and returns updated x,y values
+    """
+
+    def __init__(self, xy_generator, change_xy_function):
+        self.xy_generator = xy_generator
+        self.change_xy_function = change_xy_function
+        self.nr_batches = xy_generator.nr_batches
+        self.size = xy_generator.size
+
+    def flow(self):
+        f = self.xy_generator.flow()
+        while True:
+            for x,y in f:
+                yield self.change_xy_function(x,y)
+                
+
+class ImageAugmentationXYGenerator:
+    """Reads an input xy generator whose x is an image and apply random augmentations to it
+       xy_generator: generator of xy data; x must be an image
+       image_generator: a generator that applies random transformations on an image
+       source_is_bgr: whetever image is in bgr or rgb color space
+    """
+
+    def __init__(self, xy_generator, image_generator, input_is_bgr=True):
+        self.xy_generator = xy_generator
+        self.image_generator = image_generator
+        self.input_is_bgr = input_is_bgr
+        self.nr_batches = xy_generator.nr_batches
+        self.size = xy_generator.size
+
+    def flow(self):
+        f = self.xy_generator.flow()
+        for items in f:
+            xs = []
+            ys = []
+            for i,bx in enumerate(items[0]):
+                by = items[1][i]
+
+                if(self.input_is_bgr):
+                    bx = cv2.cvtColor(bx, cv2.COLOR_BGR2RGB)
+
+                ir = self.image_generator.flow(np.array([bx]), np.array([by]), batch_size=1)
+                im = ir.next()
+                bx = im[0][0]
+                by = im[1]
+
+                if(self.input_is_bgr):
+                    bx = cv2.cvtColor(bx, cv2.COLOR_RGB2BGR)
+
+                xs.append(bx)
+                ys.append(by[0])
+            yield np.array(xs), np.array(ys)
+
+                
 class ClassBalancerGeneratorXY:
     """Sinks from a xy generator, analyses class distribution and outputs balanced samples. Will undersample and/or augment data if needed to balance classes
     source_xy_generator: source generator from where samples will be fetched
@@ -466,29 +523,6 @@ def add_sample_to_dataset(x_ds, y_ds, x_data, y_data):
     y_ds[y_shape[0]-1] = y_data
 
 
-def image_augmentation_xy(source_batch_generator, image_generator, source_is_bgr=True):
-    for items in source_batch_generator:
-        xs = []
-        ys = []
-        for i,bx in enumerate(items[0]):
-            by = items[1][i]
-            
-            if(source_is_bgr):
-                bx = cv2.cvtColor(bx, cv2.COLOR_BGR2RGB)
-            
-            ir = image_generator.flow(np.array([bx]), np.array([by]), batch_size=1)
-            im = ir.next()
-            bx = im[0][0]
-            by = im[1]
-            
-            if(source_is_bgr):
-                bx = cv2.cvtColor(bx, cv2.COLOR_RGB2BGR)
-            
-            xs.append(bx)
-            ys.append(by[0])
-        yield np.array(xs), np.array(ys)
-
-        
 def print_same_line(log, use_logger=True):
     l = "\r{}".format(log)
     stdout.write(l)
