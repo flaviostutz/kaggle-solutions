@@ -307,7 +307,8 @@ class ClassBalancerGeneratorXY:
         logger.info('source range: ' + str(source_start_pos) + '-' + str(source_end_pos) + ' (' + str(source_end_pos-source_start_pos) + ')')
         logger.info('output range: ' + str(output_start_pos) + '-' + str(output_end_pos) + ' (' + str(output_end_pos-output_start_pos) + ')')
 
-        self.source_xy_generator.setup_flow(source_start_pos, source_end_pos)
+        if 'setup_flow' in dir(self.source_xy_generator):
+            self.source_xy_generator.setup_flow(source_start_pos, source_end_pos)
     
     def flow(self, max_samples=None, output_dtype='uint8'):
         logger.info('starting new flow...')
@@ -485,8 +486,9 @@ def dump_xy_to_array(xy_generator, nr_samples, x=False, y=True, dtype='uint8', f
             Yds = np.concatenate((Yds, y_data))
             if(len(Yds)>nr_samples):
                 Yds = np.split(Yds, [nr_samples])[0]
-                
-        print_same_line(str(count) + '/' + str(nr_samples))
+        
+        if(count%100==0):
+            print_same_line(str(count) + '/' + str(nr_samples))
                 
         if(count>=nr_samples):
             break
@@ -576,26 +578,40 @@ print(onehot_to_label(y))"""
         return lb.inverse_transform(Y_onehot)
     
 def label_to_onehot(Y_labels, number_classes):
+    nc = number_classes
+    if(number_classes<=2):
+        #this is due to a possible bug in preprocessing
+        #if number_classes == 2, it returns only one dimension instead of two
+        nc += 1
     lb = preprocessing.LabelBinarizer()
-    lb.fit(np.array(range(number_classes)))
-    return lb.transform(Y_labels)
-    
+    lb.fit(np.array(range(nc)))
+    r = lb.transform(Y_labels)
+    if(number_classes<=2):
+        r = r[:,0:number_classes]
+    return r
 
 def change_classes(Y_onehot, change_y):
     """
         Change classes of a list of onehot encoded samples
         Y_onehot: an array of samples encoded using one hot encoding. ex.: np.array([[1,0,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,1]])
-        change_y: list of pairs of class labels to change from/to. ex.: applying change_y [(0,2),(2,3),(5,1),(1,3)] to above example array will result 
-        [[0, 0, 1, 0, 0, 0],
-         [0, 0, 0, 1, 0, 0],
-         [0, 1, 0, 0, 0, 0]] 
-        returns Y_onehot with exchanged classes
+        change_y: array of label exchanges. ex.: applying change_y [[1],[0,2,5]] to above example array will result 
+        [[0, 1],  <- classes 0,2,5 becomes 1
+         [1, 0],  <- classes 1 becomes 0
+         [0, 1]]  <- classes 0,2,5 becomes 1
+        returns Y_onehot with exchanged classes and reduzed class length
     """
+    change = []
+    for ai,a in enumerate(change_y):
+        for b in a:
+            change.append((b,ai))
+
     Y_labels = onehot_to_label(Y_onehot)
-    for cy in change_y:
-        Y_labels[Y_labels == cy[0]] = -cy[1]
+    Y_labels = Y_labels + 1 #avoid bug because class '0' doesn't have a negative value
+    for cy in change:
+        Y_labels[Y_labels == cy[0]+1] = -(cy[1]+1)
     Y_labels[Y_labels < 0] *= -1
-    return label_to_onehot(Y_labels, 6)
+    Y_labels = Y_labels - 1 #avoid bug because class '0' doesn't have a negative value
+    return label_to_onehot(Y_labels, len(change_y))
     
     
 #Y_onehot: numpy array with one hot encoding data

@@ -80,6 +80,7 @@ def convnet_medium1_lion_keras(image_dims):
     model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
     model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])    
     
     return model
 
@@ -102,6 +103,7 @@ def convnet_medium2_lion_keras(image_dims):
     model.add(core.Dense(2048, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
     model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])    
     
     return model
 
@@ -124,6 +126,7 @@ def convnet_medium3_lion_keras(image_dims):
     model.add(core.Dense(2048, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
     model.add(core.Dense(6, activation='softmax', init='glorot_uniform'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])    
     
     return model
 
@@ -148,11 +151,12 @@ def convnet_simple_lion_keras(image_dims):
     model.add(core.Dense(1024, activation='relu'))
     model.add(core.Dropout(0.5))
     model.add(core.Dense(6, activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])    
     
     return model
 
 
-def convnet_medium1_single(image_dims):
+def convnet_medium1_boolean(image_dims):
     model = keras.models.Sequential()
 
     model.add(core.Lambda(lambda x: (x / 255.0) - 0.5, input_shape=image_dims))
@@ -170,8 +174,8 @@ def convnet_medium1_single(image_dims):
     model.add(core.Dropout(0.5))
     model.add(core.Dense(1024, activation='relu', init='glorot_uniform'))
     model.add(core.Dropout(0.5))
-    model.add(core.Dense(1, activation='sigmoid', init='glorot_uniform'))
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['acc'])    
+    model.add(core.Dense(2, activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['acc'])    
     
     return model
 
